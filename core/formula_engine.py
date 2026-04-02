@@ -41,10 +41,29 @@ def _parse_cell_ref(ref: str) -> tuple[str, str]:
     return match.group(1).upper(), match.group(2)
 
 
+def _find_sheet(workbook, sheet_name: str):
+    """Find a worksheet by name, with fuzzy matching for numeric names.
+
+    Handles cases like sheet_name='3' matching '3. Hypothèses'.
+    """
+    # Exact match
+    if sheet_name in workbook.sheetnames:
+        return workbook[sheet_name]
+    # Fuzzy: sheet_name is a prefix (e.g. "3" matches "3. Hypothèses")
+    for ws_name in workbook.sheetnames:
+        if ws_name.startswith(sheet_name + ".") or ws_name.startswith(sheet_name + " "):
+            return workbook[ws_name]
+    # Case-insensitive
+    for ws_name in workbook.sheetnames:
+        if ws_name.lower() == sheet_name.lower():
+            return workbook[ws_name]
+    raise KeyError(f"Worksheet {sheet_name} does not exist.")
+
+
 def resolve_cell_reference(sheet_name: str, cell_ref: str, workbook) -> Optional[str]:
     """Resolve a single cell reference to a formatted string value."""
     try:
-        ws = workbook[sheet_name]
+        ws = _find_sheet(workbook, sheet_name)
         cell = ws[cell_ref]
         return _format_cell_value(cell.value)
     except Exception as e:
@@ -59,7 +78,7 @@ def resolve_cell_range(sheet_name: str, range_ref: str, workbook) -> list[str]:
         start_col, start_row = _parse_cell_ref(start_ref)
         end_col, end_row = _parse_cell_ref(end_ref)
 
-        ws = workbook[sheet_name]
+        ws = _find_sheet(workbook, sheet_name)
         values = []
         for row_num in range(int(start_row), int(end_row) + 1):
             cell_ref = f"{start_col}{row_num}"

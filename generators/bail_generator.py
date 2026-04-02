@@ -76,13 +76,38 @@ def _normalize_quotes(text: str) -> str:
     )
 
 
+def _strip_accents(text: str) -> str:
+    """Remove accents for fuzzy matching."""
+    import unicodedata
+    nfkd = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+
+def _lookup_variable(name: str, donnees: dict) -> Any:
+    """Look up a variable by name with case/accent-insensitive fallback."""
+    # Exact match
+    if name in donnees:
+        return donnees[name]
+    # Case-insensitive
+    name_lower = name.lower()
+    for key, val in donnees.items():
+        if key.lower() == name_lower:
+            return val
+    # Accent-insensitive
+    name_stripped = _strip_accents(name_lower)
+    for key, val in donnees.items():
+        if _strip_accents(key.lower()) == name_stripped:
+            return val
+    return None
+
+
 def evaluer_condition(condition_str: Optional[str], donnees: dict[str, Any]) -> bool:
     """Evaluate a textual condition against data.
 
     Supports:
     - Empty/None -> True
-    - "Si [X] = 'value'" -> string comparison (case-insensitive)
-    - "Si [X] > N" -> numeric comparison
+    - "Si [X] = 'value'" or 'Si "X" = value' -> string comparison
+    - "Si [X] > N" or "Si X supérieur à N" -> numeric comparison
     - "Si [X] non vide" -> non-empty check
     - "Si plusieurs conditions suspensives" -> count check
     """
@@ -101,30 +126,38 @@ def evaluer_condition(condition_str: Optional[str], donnees: dict[str, Any]) -> 
         )
         return count > 1
 
-    # "Si [Variable] non vide/nul"
+    # "Si [Variable] non vide/nul" or "Si [Variable] non nul"
+    # Must handle apostrophes in variable names like "Droit d'entrée"
     non_vide_match = re.search(
         r"Si\s+\[([^\]]+)\]\s+non\s+(vide|nul)", condition, re.IGNORECASE
     )
     if non_vide_match:
-        var_name = non_vide_match.group(1)
-        value = donnees.get(var_name)
+        var_name = non_vide_match.group(1).strip()
+        value = _lookup_variable(var_name, donnees)
         if value is None:
             return False
         s = str(value).strip()
         return bool(s) and s != "0"
 
-    # Comparison: "Si [Variable] operator value"
+    # Normalize accented operators for matching
+    # "supérieur à" -> "superieur a", "supérieure à" -> "superieure a"
+    condition_normalized = _strip_accents(condition)
+
+    # Comparison pattern: supports [Variable], "Variable", or bare Variable
+    # Operators: =, !=, >, <, >=, <=, superieur a, superieure a
     comp_match = re.search(
-        r"Si\s+\"?([^\"\[\]]+|\[[^\]]+\])\"?\s*(>=|<=|!=|=|>|<|superieur a|superieure a)\s*[\"']?([^\"']+)[\"']?",
-        condition,
+        r"Si\s+[\[\"']?([^\]\"'=<>!]+?)[\]\"']?\s*(>=|<=|!=|=|>|<|superieur a|superieure a)\s*[\"']?([^\"']+?)[\"']?\s*$",
+        condition_normalized,
         re.IGNORECASE,
     )
     if comp_match:
-        var_ref = comp_match.group(1).strip().strip("[]")
+        var_ref = comp_match.group(1).strip()
         operator = comp_match.group(2).strip().lower()
         expected = comp_match.group(3).strip()
 
-        actual = donnees.get(var_ref, "")
+        actual = _lookup_variable(var_ref, donnees)
+        if actual is None:
+            actual = ""
 
         if operator == "=":
             return str(actual).strip().lower() == expected.lower()
@@ -311,25 +344,25 @@ class BailGenerator:
         # For ranges (list of values)
         if isinstance(valeur_attendue, list):
             for nom in noms:
-                val = donnees.get(nom)
+                val = _lookup_variable(nom, donnees)
                 if val and str(val) in valeur_attendue:
                     return True
             return False
 
         # Special case: conditions suspensives - check if at least one is non-empty
-        if ("Article préliminaire" in article_name
+        if ("préliminaire" in article_name.lower()
                 and "Condition" in nom_source
                 and "suspensive" in nom_source.lower()):
             for nom in noms:
-                val = donnees.get(nom)
+                val = _lookup_variable(nom, donnees)
                 if val and str(val).strip():
                     return True
             return False
 
         # Simple value comparison
         for nom in noms:
-            val = donnees.get(nom)
-            if str(val).strip() == str(valeur_attendue).strip():
+            val = _lookup_variable(nom, donnees)
+            if val is not None and str(val).strip() == str(valeur_attendue).strip():
                 return True
         return False
 
@@ -392,7 +425,7 @@ class BailGenerator:
 
             # Replace [Variable] placeholders in the generated text
             for match in re.findall(r"\[([^\]]+)\]", contenu):
-                value = variables.get(match)
+                value = _lookup_variable(match, variables)
                 if value is not None and str(value).strip():
                     try:
                         num = float(
