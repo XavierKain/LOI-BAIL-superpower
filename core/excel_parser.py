@@ -101,11 +101,17 @@ class ExcelParser:
         config_wb = openpyxl.load_workbook(str(self.config_path), data_only=True)
 
         result: dict[str, SocieteInfo] = {}
-        if "Societe Bailleur" not in config_wb.sheetnames:
+        # Find sheet by name (handle accent variants)
+        sheet_name = None
+        for name in config_wb.sheetnames:
+            if "bailleur" in name.lower() and ("societ" in name.lower() or "société" in name.lower()):
+                sheet_name = name
+                break
+        if not sheet_name:
             config_wb.close()
             return result
 
-        ws = config_wb["Societe Bailleur"]
+        ws = config_wb[sheet_name]
         for row in range(2, ws.max_row + 1):
             nom = self._format_cell_value(ws.cell(row=row, column=1).value)
             if not nom:
@@ -151,5 +157,7 @@ class ExcelParser:
     def get_output_filename_bail(self, variables: dict) -> str:
         """Generate BAIL output filename: 'BAIL - NomPreneur - DateLOI.docx'."""
         nom_preneur = variables.get("Nom Preneur", "Preneur").replace("/", "-").replace("\\", "-")
-        date_loi = variables.get("Date LOI", datetime.now().strftime("%d/%m/%Y"))
+        date_loi = variables.get("Date LOI", datetime.now().strftime("%d-%m-%Y"))
+        # Replace / in date to avoid path issues
+        date_loi = date_loi.replace("/", "-").replace("\\", "-")
         return f"BAIL - {nom_preneur} - {date_loi}.docx"
