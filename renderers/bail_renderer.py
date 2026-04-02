@@ -131,20 +131,18 @@ class BailRenderer:
 
         for paragraph in list(doc.paragraphs):
             text = paragraph.text.strip()
-            if not text.startswith("{{"):
-                continue
 
-            # Handle {{VILLE}}
-            if "{{VILLE}}" in text:
-                for run in paragraph.runs:
-                    run.text = run.text.replace("{{VILLE}}", ville)
-                continue
-
-            # Handle {{DATE_SIGNATURE}}
-            if "{{DATE_SIGNATURE}}" in text:
+            # Handle {{VILLE}} and {{DATE_SIGNATURE}} anywhere in paragraph
+            if "{{VILLE}}" in text or "{{DATE_SIGNATURE}}" in text:
                 date_sig = variables.get("Date de signature", "")
                 for run in paragraph.runs:
-                    run.text = run.text.replace("{{DATE_SIGNATURE}}", date_sig)
+                    if "{{VILLE}}" in run.text:
+                        run.text = run.text.replace("{{VILLE}}", ville)
+                    if "{{DATE_SIGNATURE}}" in run.text:
+                        run.text = run.text.replace("{{DATE_SIGNATURE}}", date_sig)
+                continue
+
+            if "{{" not in text:
                 continue
 
             # Check for article placeholders

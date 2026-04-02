@@ -43,25 +43,28 @@ _TEXTES_CONDITIONS = {
     "Autre": "[.]",
 }
 
-# Article generation order
+# Article generation order: (article_name_in_excel, designation_filter, output_key)
+# article_name_in_excel: matches the "Article" column in the Excel rules
+# designation_filter: if set, only rows with this Designation are used (for "Comparution" which has 2)
+# output_key: the key used in ArticleResult.designation (maps to template placeholders)
 _ARTICLES_ORDER = [
-    ("Comparution Bailleur", None),
-    ("Comparution Preneur", None),
-    ("Article preliminaire", None),
-    ("Article 1", None),
-    ("Article 2", None),
-    ("Article 3", None),
-    ("Article 5.3", None),
-    ("Article 7.1", None),
-    ("Article 7.2", None),
-    ("Article  7.3", None),  # Note: double space preserved from template
-    ("Article 7.6", None),
-    ("Article 8", None),
-    ("Article 19", None),
-    ("Article 22.2", None),
-    ("Article 26", None),
-    ("Article 26.1", None),
-    ("Article 26.2", None),
+    ("Comparution", "Comparution Bailleur", "Comparution Bailleur"),
+    ("Comparution", "Comparution Preneur", "Comparution Preneur"),
+    ("Article préliminaire", None, "Article preliminaire"),
+    ("Article 1", None, "Article 1"),
+    ("Article 2", None, "Article 2"),
+    ("Article 3", None, "Article 3"),
+    ("Article 5.3", None, "Article 5.3"),
+    ("Article 7.1", None, "Article 7.1"),
+    ("Article 7.2", None, "Article 7.2"),
+    ("Article  7.3", None, "Article  7.3"),  # Note: double space preserved from template
+    ("Article 7.6", None, "Article 7.6"),
+    ("Article 8", None, "Article 8"),
+    ("Article 19", None, "Article 19"),
+    ("Article 22.2", None, "Article 22.2"),
+    ("Article 26", None, "Article 26"),
+    ("Article 26.1", None, "Article 26.1"),
+    ("Article 26.2", None, "Article 26.2"),
 ]
 
 
@@ -239,13 +242,24 @@ class BailGenerator:
             return resolve_formula(source_str, self.source_workbook)
         return source_ref
 
-    def _get_article_rows(self, article_name: str) -> list[dict]:
-        """Get all rows for an article (including continuation rows)."""
+    def _get_article_rows(self, article_name: str, designation: str = None) -> list[dict]:
+        """Get all rows for an article (including continuation rows).
+
+        If designation is set, only returns rows where the Designation column
+        matches (used for "Comparution" which has both Bailleur and Preneur).
+        """
         rows = []
         found = False
         for _, row in self.regles_df.iterrows():
             art = row.get("Article")
+            desig = row.get("Désignation") or row.get("Designation")
+
             if pd.notna(art) and str(art).strip() == article_name:
+                # If designation filter is set, check it
+                if designation:
+                    desig_str = str(desig).strip() if pd.notna(desig) else ""
+                    if desig_str != designation:
+                        continue
                 found = True
                 rows.append(row)
             elif found and (pd.isna(art) or str(art).strip() == ""):
@@ -254,14 +268,79 @@ class BailGenerator:
                 break
         return rows
 
+    def _parse_nom_source_variables(self, nom_source: str, donnees: dict) -> list[str]:
+        """Parse Nom Source into individual variable names.
+
+        Handles patterns like "Conditions suspensives 1, 2, 3, 4." ->
+        ["Condition suspensive 1", "Condition suspensive 2", ...]
+        """
+        # Check for pattern "BASE 1, 2, 3, 4"
+        pattern_match = re.match(r"^(.+?)\s+(\d+)(?:,\s*(\d+))*", str(nom_source))
+        if pattern_match and "," in str(nom_source):
+            base = pattern_match.group(1).strip().rstrip(".")
+            # Singularize: "Conditions suspensives" -> "Condition suspensive"
+            base_words = base.split()
+            base_singular = " ".join(
+                w.rstrip("s") if w.endswith("s") and len(w) > 1 else w
+                for w in base_words
+            )
+            # Check if singular form exists in data
+            if f"{base_singular} 1" in donnees:
+                base = base_singular
+            numbers = re.findall(r"\d+", str(nom_source))
+            return [f"{base} {num}" for num in numbers]
+        else:
+            # Split by newline
+            return [n.strip().rstrip(".") for n in str(nom_source).split("\n") if n.strip()]
+
+    def _check_donnee_source_match(
+        self, nom_source: str, donnee_source, article_name: str, donnees: dict
+    ) -> bool:
+        """Check if the data source value matches the expected value (lookup logic)."""
+        noms = self._parse_nom_source_variables(nom_source, donnees)
+
+        # Resolve formula if needed
+        valeur_attendue = donnee_source
+        if str(donnee_source).startswith("="):
+            resolved = self._resolve_source(donnee_source)
+            if resolved is not None:
+                valeur_attendue = resolved
+            else:
+                return False
+
+        # For ranges (list of values)
+        if isinstance(valeur_attendue, list):
+            for nom in noms:
+                val = donnees.get(nom)
+                if val and str(val) in valeur_attendue:
+                    return True
+            return False
+
+        # Special case: conditions suspensives - check if at least one is non-empty
+        if ("Article préliminaire" in article_name
+                and "Condition" in nom_source
+                and "suspensive" in nom_source.lower()):
+            for nom in noms:
+                val = donnees.get(nom)
+                if val and str(val).strip():
+                    return True
+            return False
+
+        # Simple value comparison
+        for nom in noms:
+            val = donnees.get(nom)
+            if str(val).strip() == str(valeur_attendue).strip():
+                return True
+        return False
+
     def generer_bail(self, variables: dict[str, Any]) -> list[ArticleResult]:
         """Generate all BAIL articles from rules and variables."""
         from generators.shared import formater_nombre
 
         articles = []
 
-        for article_name, designation in _ARTICLES_ORDER:
-            rows = self._get_article_rows(article_name)
+        for article_name, designation_filter, output_key in _ARTICLES_ORDER:
+            rows = self._get_article_rows(article_name, designation_filter)
             if not rows:
                 logger.warning(f"No rules found for {article_name}")
                 continue
@@ -270,19 +349,24 @@ class BailGenerator:
             manquants = []
 
             for row in rows:
+                donnee_source = row.get("Donnée source")
+                nom_source_raw = row.get("Nom Source")
+                nom_source = str(nom_source_raw).strip() if pd.notna(nom_source_raw) else ""
                 condition = row.get("Condition")
                 option1 = row.get("Entrée correspondante - Option 1", "")
                 condition2 = row.get("Condition Option 2")
                 option2 = row.get("Entrée correspondante - Option 2", "")
 
-                # Check for conditions suspensives special case
-                nom_source = (
-                    str(row.get("Nom Source", ""))
-                    if pd.notna(row.get("Nom Source"))
-                    else ""
-                )
+                # Step 1: Check Donnee source / Nom Source lookup (if both present)
+                if pd.notna(donnee_source) and nom_source:
+                    if not self._check_donnee_source_match(
+                        nom_source, donnee_source, article_name, variables
+                    ):
+                        continue  # Skip this row — lookup doesn't match
+
+                # Step 2: Check for conditions suspensives special case
                 if (
-                    article_name == "Article preliminaire"
+                    "préliminaire" in article_name.lower()
                     and "Condition" in nom_source
                     and "suspensive" in nom_source.lower()
                 ):
@@ -293,11 +377,14 @@ class BailGenerator:
                         textes.append(texte)
                     continue
 
-                # Standard condition evaluation
+                # Step 3: Evaluate Condition -> Option 1
                 if evaluer_condition(condition, variables):
                     if pd.notna(option1) and str(option1).strip():
                         textes.append(str(option1))
-                elif evaluer_condition(condition2, variables):
+                        continue
+
+                # Step 4: Evaluate Condition Option 2 -> Option 2
+                if evaluer_condition(condition2, variables):
                     if pd.notna(option2) and str(option2).strip():
                         textes.append(str(option2))
 
@@ -319,17 +406,9 @@ class BailGenerator:
                 else:
                     manquants.append(match)
 
-            desig = (
-                str(rows[0].get("Designation", article_name))
-                if rows
-                else article_name
-            )
-            if pd.isna(desig):
-                desig = article_name
-
             articles.append(
                 ArticleResult(
-                    designation=desig,
+                    designation=output_key,
                     contenu=contenu,
                     placeholders_manquants=manquants,
                 )
