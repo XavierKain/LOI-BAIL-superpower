@@ -1,0 +1,49 @@
+"""LOI-specific generation logic: optional sections, clear list."""
+
+import logging
+from typing import Optional
+
+from core.models import DossierData
+from generators.shared import est_societe
+
+logger = logging.getLogger(__name__)
+
+
+class LOIGenerator:
+    """LOI document generation logic."""
+
+    def __init__(self, dossier: DossierData):
+        self.dossier = dossier
+        self.clear_list: list[str] = []
+        self._build_clear_list()
+
+    def _build_clear_list(self):
+        """Build list of placeholders to replace with empty string."""
+        all_vars = {**self.dossier.variables, **self.dossier.variables_derivees}
+        type_preneur = all_vars.get("Type Preneur", "")
+        if not est_societe(type_preneur):
+            self.clear_list.extend(["PRESIDENT DE LA SOCIETE", "FONCTION INPI"])
+
+    def get_all_variables(self) -> dict[str, str]:
+        """Merge all variable sources into a single dict for rendering."""
+        result = dict(self.dossier.variables)
+        result.update(self.dossier.variables_derivees)
+        return result
+
+    def has_palier_data(self) -> bool:
+        """Check if any palier data exists."""
+        all_vars = self.get_all_variables()
+        return any(all_vars.get(f"Montant du palier {i}") for i in range(1, 7))
+
+    def has_conditions_suspensives(self) -> bool:
+        """Check if any condition suspensive exists."""
+        all_vars = self.get_all_variables()
+        return any(
+            all_vars.get(f"Condition suspensive {i}")
+            for i in range(1, 5)
+        )
+
+    def has_honoraires_preneurs(self) -> bool:
+        """Check if Honoraires Preneurs data exists."""
+        all_vars = self.get_all_variables()
+        return bool(all_vars.get("Honoraires Preneurs"))
