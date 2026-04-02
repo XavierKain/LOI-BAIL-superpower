@@ -75,9 +75,20 @@ class LOIRenderer:
         self.engine.delete_paragraphs(to_delete)
 
         # Phase 4: Update headers/footers
-        bailleur_name = variables.get("Societe Bailleur", "")
-        if bailleur_name and bailleur_name in societe_info:
-            self._update_headers_footers(doc, societe_info[bailleur_name])
+        bailleur_name = (
+            variables.get("Société Bailleur", "")
+            or variables.get("Societe Bailleur", "")
+        )
+        if bailleur_name:
+            # Try exact match first, then case-insensitive
+            societe = societe_info.get(bailleur_name)
+            if not societe:
+                for key, info in societe_info.items():
+                    if key.lower().strip() == bailleur_name.lower().strip():
+                        societe = info
+                        break
+            if societe:
+                self._update_headers_footers(doc, societe)
 
         # Save
         doc.save(output_path)

@@ -119,7 +119,13 @@ class ExcelParser:
 
     def enrich_from_inpi(self, variables: dict) -> Optional[InpiData]:
         """Enrich variables with INPI data if SIRET is available."""
-        siret = variables.get("SIRET", "")
+        # Try multiple possible key names for SIRET
+        siret = (
+            variables.get("SIRET", "")
+            or variables.get("N° DE SIRET", "")
+            or variables.get("N° de SIRET", "")
+            or variables.get("Numéro SIRET", "")
+        )
         if not siret or not validate_inpi_credentials():
             return None
 

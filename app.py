@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import tempfile
+import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -46,107 +47,263 @@ def _check_required_files():
         st.stop()
 
 
+def _ensure_source_file(file_content: bytes, file_name: str) -> str:
+    """Ensure the uploaded Excel file exists on disk. Returns path."""
+    file_hash = hashlib.sha256(file_content).hexdigest()[:12]
+    tmp_path = Path(tempfile.gettempdir()) / f"loi_bail_{file_hash}.xlsx"
+    if not tmp_path.exists():
+        tmp_path.write_bytes(file_content)
+    return str(tmp_path)
+
+
 @st.cache_data(show_spinner=False)
 def _parse_excel(file_content: bytes, file_name: str, config_path: str, _cache_key: str):
     """Parse Excel file with daily cache invalidation."""
-    file_hash = hashlib.sha256(file_content).hexdigest()[:12]
-    tmp_path = Path(tempfile.gettempdir()) / f"temp_{file_hash}.xlsx"
-    try:
-        tmp_path.write_bytes(file_content)
-        parser = ExcelParser(str(tmp_path), config_path)
-        variables = parser.extract_variables()
-        societes = parser.extract_societe_info()
-        inpi_data = parser.enrich_from_inpi(variables)
-        output_name_loi = parser.get_output_filename_loi(variables)
-        output_name_bail = parser.get_output_filename_bail(variables)
-        return variables, societes, inpi_data, str(tmp_path), output_name_loi, output_name_bail
-    finally:
-        if tmp_path.exists():
-            tmp_path.unlink()
+    source_path = _ensure_source_file(file_content, file_name)
+    parser = ExcelParser(source_path, config_path)
+    variables = parser.extract_variables()
+    societes = parser.extract_societe_info()
+    inpi_data = parser.enrich_from_inpi(variables)
+    output_name_loi = parser.get_output_filename_loi(variables)
+    output_name_bail = parser.get_output_filename_bail(variables)
+    return variables, societes, inpi_data, source_path, output_name_loi, output_name_bail
 
 
 def main():
-    st.title("📄 Générateur LOI & BAIL")
+    st.title("📄 Générateur de Documents Immobiliers")
+    st.markdown("Génération automatique de LOI et BAIL à partir d'une Fiche de décision")
+
+    st.markdown("---")
+
+    st.markdown("""
+Cette application génère automatiquement des documents LOI (Lettres d'Intention) et BAIL (Baux Commerciaux).
+
+### Comment ça marche ?
+1. **Uploadez** votre fichier Excel (Fiche de décision)
+2. **Vérifiez** les données extraites et enrichies (INPI)
+3. **Choisissez** : Générer LOI ou Générer BAIL (ou les deux !)
+4. **Téléchargez** les fichiers DOCX générés
+""")
+
+    st.markdown("---")
+
     _check_required_files()
 
+    # Upload
+    st.header("1. Upload du fichier Excel")
     uploaded_file = st.file_uploader(
-        "Charger la Fiche de décision (Excel)",
+        "Choisissez votre fichier Excel (Fiche de décision)",
         type=["xlsx", "xls"],
     )
 
     if not uploaded_file:
-        st.info("Veuillez charger un fichier Excel pour commencer.")
+        st.info("👆 Uploadez un fichier Excel pour commencer")
         return
 
-    # Parse with daily cache
-    cache_key = f"{uploaded_file.name}_{datetime.now().strftime('%Y-%m-%d')}"
-    file_content = uploaded_file.read()
+    try:
+        st.success(f"✅ Fichier chargé: {uploaded_file.name}")
 
-    with st.spinner("Extraction des données..."):
-        variables, societes, inpi_data, source_path, output_name_loi, output_name_bail = _parse_excel(
-            file_content, uploaded_file.name, str(CONFIG_LOI), cache_key,
-        )
+        file_content = uploaded_file.getbuffer().tobytes()
+        cache_key = f"{uploaded_file.name}_{datetime.now().strftime('%Y-%m-%d')}"
 
-    # Normalize + derive
-    variables = normaliser_noms_variables(variables)
-    variables_derivees = calculer_variables_derivees(variables, inpi_data)
+        with st.spinner("Extraction des données et enrichissement INPI..."):
+            variables, societes, inpi_data, source_path, output_name_loi, output_name_bail = _parse_excel(
+                file_content, uploaded_file.name, str(CONFIG_LOI), cache_key,
+            )
 
-    dossier = DossierData(
-        variables=variables,
-        variables_derivees=variables_derivees,
-        inpi_data=inpi_data,
-        source_file=Path(source_path),
-    )
+        # Ensure source file exists on disk (may have been lost between reruns)
+        source_path = _ensure_source_file(file_content, uploaded_file.name)
 
-    # Show extraction summary
-    nom_preneur = variables.get("Nom Preneur", "—")
-    st.success(f"Données extraites pour: **{nom_preneur}**")
+        # Normalize + derive
+        variables = normaliser_noms_variables(variables)
+        variables_derivees = calculer_variables_derivees(variables, inpi_data)
 
-    if inpi_data and inpi_data.status == "success":
-        st.info(f"INPI: {inpi_data.nom_societe} — {inpi_data.president} ({inpi_data.fonction})")
+        # Merge all variables for display
+        all_vars = {**variables, **variables_derivees}
 
-    # Tabs
-    tab_loi, tab_bail = st.tabs(["📝 LOI", "📋 BAIL"])
+        st.success(f"✅ {len(variables)} variables extraites et enrichies (données en cache)")
 
-    with tab_loi:
-        if st.button("Générer la LOI", key="btn_gen_loi"):
-            with st.spinner("Génération de la LOI..."):
-                generator = LOIGenerator(dossier)
-                renderer = LOIRenderer(str(TEMPLATE_LOI))
-                output_path = OUTPUT_DIR / output_name_loi
-                OUTPUT_DIR.mkdir(exist_ok=True)
-                renderer.render(generator, societes, str(output_path))
+        # =============================================
+        # Section 2: Data display
+        # =============================================
+        st.header("2. Données extraites et enrichies")
 
-            with open(output_path, "rb") as f:
-                st.download_button(
-                    "⬇️ Télécharger la LOI",
-                    f.read(),
-                    file_name=output_name_loi,
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    key="download_loi",
-                )
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Nom Preneur", all_vars.get("Nom Preneur", "Non défini"))
+            st.metric("Société Bailleur", all_vars.get("Société Bailleur", all_vars.get("Societe Bailleur", "Non défini")))
+        with col2:
+            st.metric("Date LOI", all_vars.get("Date LOI", "Non défini"))
+            montant = all_vars.get("Montant du loyer", "Non défini")
+            st.metric("Montant du loyer", f"{montant} €" if montant != "Non défini" else "Non défini")
+        with col3:
+            duree = all_vars.get("Durée Bail", all_vars.get("Duree Bail", "Non défini"))
+            st.metric("Durée Bail", f"{duree} ans" if duree != "Non défini" else "Non défini")
+            st.metric("Enseigne", all_vars.get("Enseigne", "Non défini"))
 
-    with tab_bail:
-        if st.button("Générer le BAIL", key="btn_gen_bail"):
-            with st.spinner("Génération du BAIL..."):
-                all_vars = {**variables, **variables_derivees}
-                bail_gen = BailGenerator(
-                    str(CONFIG_BAIL), source_workbook_path=source_path
-                )
-                articles = bail_gen.generer_bail(all_vars)
-                renderer = BailRenderer(str(TEMPLATE_BAIL))
-                output_path = OUTPUT_DIR / output_name_bail
-                OUTPUT_DIR.mkdir(exist_ok=True)
-                renderer.render(articles, all_vars, str(output_path))
+        # INPI section
+        siret = all_vars.get("N° DE SIRET", all_vars.get("SIRET", ""))
+        if siret:
+            st.markdown("---")
+            inpi_ok = inpi_data and inpi_data.status == "success"
 
-            with open(output_path, "rb") as f:
-                st.download_button(
-                    "⬇️ Télécharger le BAIL",
-                    f.read(),
-                    file_name=output_name_bail,
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    key="download_bail",
-                )
+            if inpi_ok:
+                st.success("🏢 Données INPI enrichies automatiquement ✅")
+            else:
+                st.warning("⚠️ Enrichissement INPI échoué")
+
+            with st.expander("📊 Informations INPI", expanded=inpi_ok):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**SIRET**")
+                    st.text(siret)
+                    st.markdown("**Nom de la société**")
+                    st.text(all_vars.get("NOM DE LA SOCIETE", "Non disponible"))
+                    st.markdown("**Type de société**")
+                    st.text(all_vars.get("TYPE DE SOCIETE", "Non disponible"))
+                with col2:
+                    st.markdown("**Capital social**")
+                    st.text(all_vars.get("CAPITAL SOCIAL", "Non disponible"))
+                    st.markdown("**Localité RCS**")
+                    st.text(all_vars.get("LOCALITE RCS", "Non disponible"))
+                st.markdown("**Adresse de domiciliation**")
+                st.text(all_vars.get("ADRESSE DE DOMICILIATION", "Non disponible"))
+                st.markdown("**Président / Gérant**")
+                st.text(all_vars.get("PRESIDENT DE LA SOCIETE", "Non disponible"))
+
+        # All variables expander
+        with st.expander("📋 Voir toutes les variables extraites", expanded=False):
+            display_vars = {k: v for k, v in all_vars.items() if not k.startswith("_")}
+            sorted_vars = dict(sorted(display_vars.items()))
+
+            missing_count = sum(1 for v in display_vars.values() if not v or str(v).strip() == "")
+            total_count = len(display_vars)
+
+            if missing_count > 0:
+                st.warning(f"⚠️ {missing_count}/{total_count} variables manquantes")
+            else:
+                st.success(f"✅ Toutes les {total_count} variables sont renseignées")
+
+            for key, value in sorted_vars.items():
+                c1, c2, c3 = st.columns([2, 3, 1])
+                with c1:
+                    st.markdown(f"**{key}**")
+                with c2:
+                    if value and str(value).strip():
+                        st.text(str(value))
+                    else:
+                        st.markdown("*Non défini*")
+                with c3:
+                    st.markdown("✅" if value and str(value).strip() else "⚠️")
+
+        st.markdown("---")
+
+        # =============================================
+        # Section 3: Generation
+        # =============================================
+        st.header("3. Génération des documents")
+        st.info("💡 **Info**: Grâce au cache, après la première génération, les suivantes seront quasi-instantanées ! La barre de chargement indique la progression.")
+
+        col_loi, col_bail = st.columns(2)
+
+        # LOI
+        with col_loi:
+            st.markdown("### 📄 Lettre d'Intention")
+            st.markdown("""
+            - Enrichissement INPI automatique
+            - Sections optionnelles
+            - Headers/Footers personnalisés
+            """)
+
+            if st.button("🚀 Générer LOI", type="primary", use_container_width=True, key="btn_gen_loi"):
+                try:
+                    with st.spinner("⏳ Génération en cours..."):
+                        dossier = DossierData(
+                            variables=variables,
+                            variables_derivees=variables_derivees,
+                            inpi_data=inpi_data,
+                            source_file=Path(source_path),
+                        )
+                        generator = LOIGenerator(dossier)
+                        renderer = LOIRenderer(str(TEMPLATE_LOI))
+                        output_path = OUTPUT_DIR / output_name_loi
+                        OUTPUT_DIR.mkdir(exist_ok=True)
+                        renderer.render(generator, societes, str(output_path))
+
+                    st.success("✅ Document LOI généré avec succès!")
+
+                    with open(output_path, "rb") as f:
+                        st.download_button(
+                            "📥 Télécharger le document LOI",
+                            f.read(),
+                            file_name=output_name_loi,
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True,
+                            key="download_loi",
+                            type="primary",
+                        )
+
+                except Exception as e:
+                    st.error(f"❌ Erreur lors de la génération LOI: {str(e)}")
+                    with st.expander("Détails de l'erreur"):
+                        st.code(traceback.format_exc())
+
+        # BAIL
+        with col_bail:
+            st.markdown("### 📜 Bail Commercial")
+            st.markdown("""
+            - 16 articles conditionnels
+            - Variables dérivées automatiques
+            - Logique complexe
+            """)
+
+            if st.button("🚀 Générer BAIL", type="primary", use_container_width=True, key="btn_gen_bail"):
+                try:
+                    with st.spinner("⏳ Génération en cours..."):
+                        bail_gen = BailGenerator(
+                            str(CONFIG_BAIL), source_workbook_path=source_path
+                        )
+                        articles = bail_gen.generer_bail(all_vars)
+
+                    st.success(f"✅ {len(articles)} articles générés")
+
+                    with st.spinner("⏳ Finalisation du document Word..."):
+                        renderer = BailRenderer(str(TEMPLATE_BAIL))
+                        output_path = OUTPUT_DIR / output_name_bail
+                        OUTPUT_DIR.mkdir(exist_ok=True)
+                        renderer.render(articles, all_vars, str(output_path))
+
+                    st.success("✅ Document BAIL généré avec succès!")
+
+                    with open(output_path, "rb") as f:
+                        st.download_button(
+                            "📥 Télécharger le document BAIL",
+                            f.read(),
+                            file_name=output_name_bail,
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True,
+                            key="download_bail",
+                            type="primary",
+                        )
+
+                except Exception as e:
+                    st.error(f"❌ Erreur lors de la génération BAIL: {str(e)}")
+                    with st.expander("Détails de l'erreur"):
+                        st.code(traceback.format_exc())
+
+    except Exception as e:
+        st.error(f"❌ Erreur lors du traitement du fichier: {str(e)}")
+        with st.expander("Détails de l'erreur"):
+            st.code(traceback.format_exc())
+
+    # Footer
+    st.markdown("---")
+    st.markdown("""
+<div style='text-align: center; color: gray; padding: 20px;'>
+    <p>Générateur automatique de LOI et BAIL v2.0</p>
+    <p>Développé par Xavier Kain</p>
+</div>
+""", unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

@@ -124,6 +124,15 @@ def est_societe(type_preneur: str) -> bool:
     return upper in {f.upper() for f in _FORMES_JURIDIQUES}
 
 
+def _get_var(variables: dict, *keys: str) -> str:
+    """Get a variable value trying multiple key names (accent variants)."""
+    for key in keys:
+        val = variables.get(key, "")
+        if val and str(val).strip():
+            return str(val).strip()
+    return ""
+
+
 def calculer_variables_derivees(
     variables: dict[str, str],
     inpi_data: Optional[InpiData],
@@ -142,8 +151,8 @@ def calculer_variables_derivees(
         result["FONCTION INPI"] = inpi_data.fonction
 
     # --- Address: "rue, ville" ---
-    rue = variables.get("Numero et rue", "").strip()
-    ville = variables.get("Ville ou arrondissement", "").strip()
+    rue = _get_var(variables, "Numero et rue", "Numéro et rue")
+    ville = _get_var(variables, "Ville ou arrondissement")
     if rue and ville:
         result["Adresse Locaux Loues"] = f"{rue}, {ville}"
     elif rue:
@@ -168,7 +177,7 @@ def calculer_variables_derivees(
         result["Surface R-1"] = str(int(surface_totale - surface_rdc))
 
     # --- Type Bail ---
-    duree_bail = _clean_number(variables.get("Duree Bail", ""))
+    duree_bail = _clean_number(_get_var(variables, "Duree Bail", "Durée Bail"))
     if duree_bail is not None:
         d = int(duree_bail)
         if d == 9:
@@ -202,7 +211,7 @@ def calculer_variables_derivees(
                 continue
 
     # --- Montant du DG ---
-    duree_dg = _clean_number(variables.get("Duree DG", ""))
+    duree_dg = _clean_number(_get_var(variables, "Duree DG", "Durée DG"))
     if loyer_base and duree_dg:
         montant_dg = (loyer_base / 12) * duree_dg
         result["Montant du DG"] = formater_nombre(int(montant_dg))

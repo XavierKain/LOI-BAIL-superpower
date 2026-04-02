@@ -89,8 +89,15 @@ class WordEngine:
             return str(value), False
         return None, False
 
+    @staticmethod
+    def _strip_accents(text: str) -> str:
+        """Remove French accents for fuzzy matching."""
+        import unicodedata
+        nfkd = unicodedata.normalize("NFKD", text)
+        return "".join(c for c in nfkd if not unicodedata.combining(c))
+
     def _lookup_variable(self, name: str, variables: dict) -> Optional[str]:
-        """Look up a variable by name with case-insensitive fallback."""
+        """Look up a variable by name with case-insensitive and accent-insensitive fallback."""
         # Exact match
         if name in variables:
             val = variables[name]
@@ -101,6 +108,13 @@ class WordEngine:
         for key, val in variables.items():
             if key.lower() == name_lower:
                 return str(val) if val is not None and str(val).strip() else None
+
+        # Accent-insensitive fallback
+        name_stripped = self._strip_accents(name_lower)
+        for key, val in variables.items():
+            if self._strip_accents(key.lower()) == name_stripped:
+                return str(val) if val is not None and str(val).strip() else None
+
         return None
 
     def replace_placeholders(self, paragraph, variables: dict, clear_list: Optional[list] = None) -> Optional[str]:
