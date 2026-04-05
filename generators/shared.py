@@ -145,12 +145,67 @@ def _get_var(variables: dict, *keys: str) -> str:
     return ""
 
 
+def _resolve_internal_formulas(variables: dict[str, str]):
+    """Resolve internal formulas like =[Montant du loyer] - [Loyer année 1].
+
+    These are stored by the parser as _formula_Name = formula_string.
+    Resolves them and stores the result as the variable name.
+    """
+    import re as _re
+
+    formula_keys = [k for k in variables if k.startswith("_formula_")]
+    for fk in formula_keys:
+        var_name = fk[len("_formula_"):]
+        formula = variables[fk]
+
+        # Skip if already calculated
+        if var_name in variables and variables[var_name]:
+            continue
+
+        # Try to resolve: =[A] - [B], =[A] + [B], =[A] / N * [B], etc
+        # Simple case: =[X] - [Y]
+        match = _re.match(r"=\[([^\]]+)\]\s*([+\-*/])\s*\[([^\]]+)\]", formula)
+        if match:
+            var_a, op, var_b = match.group(1), match.group(2), match.group(3)
+            val_a = _clean_number(_get_var(variables, var_a))
+            val_b = _clean_number(_get_var(variables, var_b))
+            if val_a is not None and val_b is not None:
+                try:
+                    if op == "-":
+                        result_val = val_a - val_b
+                    elif op == "+":
+                        result_val = val_a + val_b
+                    elif op == "*":
+                        result_val = val_a * val_b
+                    elif op == "/":
+                        result_val = val_a / val_b if val_b != 0 else 0
+                    else:
+                        continue
+                    variables[var_name] = formater_nombre(int(result_val)) if result_val == int(result_val) else formater_nombre(result_val)
+                except (ValueError, TypeError, ZeroDivisionError):
+                    pass
+            continue
+
+        # Complex: =[A]/N*[B]
+        match2 = _re.match(r"=\[([^\]]+)\]\s*/\s*(\d+)\s*\*\s*\[([^\]]+)\]", formula)
+        if match2:
+            var_a, divisor, var_b = match2.group(1), int(match2.group(2)), match2.group(3)
+            val_a = _clean_number(_get_var(variables, var_a))
+            val_b = _clean_number(_get_var(variables, var_b))
+            if val_a is not None and val_b is not None:
+                result_val = (val_a / divisor) * val_b
+                variables[var_name] = formater_nombre(int(result_val)) if result_val == int(result_val) else formater_nombre(result_val)
+
+
 def calculer_variables_derivees(
     variables: dict[str, str],
     inpi_data: Optional[InpiData],
 ) -> dict[str, str]:
     """Calculate all derived variables from raw data. Called once, shared by LOI and BAIL."""
     result: dict[str, str] = {}
+
+    # --- Resolve internal formulas (stored as _formula_Name) ---
+    _resolve_internal_formulas(variables)
 
     # --- INPI data ---
     if inpi_data and inpi_data.status == "success":
@@ -173,18 +228,18 @@ def calculer_variables_derivees(
         result["Adresse Locaux Loues"] = ville
 
     # --- Paliers ---
-    loyer_base = _clean_number(variables.get("Montant du loyer", ""))
+    loyer_base = _clean_number(_get_var(variables, "Montant du loyer", "Montant du loyer "))
     if loyer_base:
         for i in range(1, 7):
-            loyer_annee = _clean_number(variables.get(f"Loyer annee {i}", ""))
+            loyer_annee = _clean_number(_get_var(variables, f"Loyer année {i}", f"Loyer annee {i}"))
             if loyer_annee is not None:
                 remise = loyer_base - loyer_annee
                 if remise > 0:
                     result[f"Montant du palier {i}"] = formater_nombre(int(remise))
 
     # --- Surfaces ---
-    surface_totale = _clean_number(variables.get("Surface totale", ""))
-    surface_rdc = _clean_number(variables.get("Surface RDC", ""))
+    surface_totale = _clean_number(_get_var(variables, "Surface totale"))
+    surface_rdc = _clean_number(_get_var(variables, "Surface RDC"))
     if surface_totale is not None and surface_rdc is not None:
         result["Surface R-1"] = str(int(surface_totale - surface_rdc))
 

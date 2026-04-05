@@ -46,7 +46,9 @@ class LOIGenerator:
                 key = f"Condition suspensive {i}"
                 raw_value = result.get(key, "")
                 if raw_value and raw_value in self.conditions_mapping:
-                    result[key] = self.conditions_mapping[raw_value]
+                    mapped = self.conditions_mapping[raw_value]
+                    # Strip leading "- " to avoid double dash (template already has "- ")
+                    result[key] = mapped.lstrip("- ").lstrip("-")
 
         return result
 

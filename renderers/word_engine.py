@@ -86,7 +86,17 @@ class WordEngine:
 
         value = self._lookup_variable(name, variables)
         if value is not None and value != "":
-            return str(value), False
+            # Format large numbers (>= 10000) with French thousands separator
+            val_str = str(value).strip()
+            cleaned = val_str.replace(" ", "").replace("\u00a0", "")
+            if cleaned.replace(".", "").replace("-", "").isdigit():
+                try:
+                    num = float(cleaned)
+                    if num >= 10000 and num == int(num) and "." not in val_str:
+                        val_str = f"{int(num):,}".replace(",", " ")
+                except (ValueError, TypeError):
+                    pass
+            return val_str, False
         return None, False
 
     @staticmethod
