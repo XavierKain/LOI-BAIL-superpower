@@ -157,10 +157,9 @@ class LOIRenderer:
             tc_borders.append(element)
 
     def _add_signature_borders(self, document):
-        """Add borders (encadrement) to signature table cells."""
+        """Add borders and space to signature table cells."""
         border_style = {"sz": "4", "val": "single", "color": "000000", "space": "0"}
         for table in document.tables:
-            # Identify signature tables: look for "Bailleur" or "Candidat" in cells
             is_signature_table = False
             for row in table.rows:
                 for cell in row.cells:
@@ -172,6 +171,14 @@ class LOIRenderer:
                     break
             if is_signature_table:
                 for row in table.rows:
+                    # Set minimum row height for signature space
+                    tr = row._tr
+                    tr_pr = tr.get_or_add_trPr()
+                    tr_height = OxmlElement("w:trHeight")
+                    tr_height.set(qn("w:val"), "2400")  # ~4.2cm height
+                    tr_height.set(qn("w:hRule"), "atLeast")
+                    tr_pr.append(tr_height)
+
                     for cell in row.cells:
                         self._set_cell_border(
                             cell,

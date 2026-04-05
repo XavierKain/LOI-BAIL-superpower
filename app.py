@@ -265,7 +265,27 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
                         )
                         articles = bail_gen.generer_bail(all_vars)
 
-                    st.success(f"✅ {len(articles)} articles générés")
+                    ok_count = sum(1 for a in articles if a.contenu.strip())
+                    st.success(f"✅ {ok_count}/{len(articles)} articles générés avec contenu")
+
+                    # Show article details
+                    with st.expander("📝 Détail des articles générés", expanded=True):
+                        for art in articles:
+                            has_content = bool(art.contenu.strip())
+                            icon = "✅" if has_content else "⚠️"
+                            c1, c2, c3 = st.columns([3, 5, 1])
+                            with c1:
+                                st.markdown(f"**{art.designation}**")
+                            with c2:
+                                if has_content:
+                                    preview = art.contenu[:80].replace("\n", " ")
+                                    st.text(preview + ("..." if len(art.contenu) > 80 else ""))
+                                else:
+                                    st.markdown("*Pas de contenu (conditions non remplies)*")
+                            with c3:
+                                st.markdown(icon)
+                            if art.placeholders_manquants:
+                                st.caption(f"  Placeholders manquants: {', '.join(art.placeholders_manquants[:5])}")
 
                     with st.spinner("⏳ Finalisation du document Word..."):
                         renderer = BailRenderer(str(TEMPLATE_BAIL))
