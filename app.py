@@ -57,8 +57,8 @@ def _ensure_source_file(file_content: bytes, file_name: str) -> str:
 
 
 @st.cache_data(show_spinner=False)
-def _parse_excel(file_content: bytes, file_name: str, config_path: str, _cache_key: str, _version: str = "v5"):
-    """Parse Excel file with daily cache invalidation."""
+def _parse_excel(file_content: bytes, file_name: str, config_path: str, cache_key: str, version: str = "v9"):
+    """Parse Excel file with cache invalidation via version param."""
     source_path = _ensure_source_file(file_content, file_name)
     parser = ExcelParser(source_path, config_path)
     variables = parser.extract_variables()
@@ -109,7 +109,7 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
 
         with st.spinner("Extraction des données et enrichissement INPI..."):
             variables, societes, inpi_data, source_path, output_name_loi, output_name_bail, cond_mapping = _parse_excel(
-                file_content, uploaded_file.name, str(CONFIG_LOI), cache_key, _version="v8",
+                file_content, uploaded_file.name, str(CONFIG_LOI), cache_key, version="v9",
             )
 
         # Ensure source file exists on disk (may have been lost between reruns)
@@ -304,6 +304,24 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
 
                     ok_count = sum(1 for a in articles if a.contenu.strip())
                     st.success(f"✅ {ok_count}/{len(articles)} articles générés avec contenu")
+
+                    # Show key BAIL variables for debugging
+                    with st.expander("🔍 Variables BAIL clés", expanded=False):
+                        bail_keys = [
+                            "Société Bailleur", "Type Preneur", "Nom Preneur",
+                            "Durée Bail", "Durée ferme Bail", "Date de prise d'effet",
+                            "Montant du loyer", "Loyer année 1", "Loyer année 2",
+                            "Montant du palier 1", "Montant du palier 2",
+                            "Actualisation", "Paiement", "Accession",
+                            "Droit d'entrée", "Durée DG", "Montant du DG",
+                            "Durée Franchise", "Honoraires Preneur", "DPE",
+                            "Destination", "Enseigne", "Restauration sans extraction",
+                            "Condition suspensive 1", "Condition suspensive 2",
+                        ]
+                        for bk in bail_keys:
+                            val = all_vars.get(bk, "")
+                            icon = "✅" if val else "⚠️"
+                            st.markdown(f"{icon} **{bk}** = {val if val else '*vide*'}")
 
                     # Show article details
                     with st.expander("📝 Détail des articles générés", expanded=True):
