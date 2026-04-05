@@ -109,7 +109,7 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
 
         with st.spinner("Extraction des données et enrichissement INPI..."):
             variables, societes, inpi_data, source_path, output_name_loi, output_name_bail, cond_mapping = _parse_excel(
-                file_content, uploaded_file.name, str(CONFIG_LOI), cache_key, _version="v6",
+                file_content, uploaded_file.name, str(CONFIG_LOI), cache_key, _version="v7",
             )
 
         # Ensure source file exists on disk (may have been lost between reruns)
@@ -135,8 +135,12 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
             st.metric("Société Bailleur", all_vars.get("Société Bailleur", all_vars.get("Societe Bailleur", "Non défini")))
         with col2:
             st.metric("Date LOI", all_vars.get("Date LOI", "Non défini"))
-            montant = all_vars.get("Montant du loyer", "Non défini")
-            st.metric("Montant du loyer", f"{montant} €" if montant != "Non défini" else "Non défini")
+            montant_raw = all_vars.get("Montant du loyer", "")
+            try:
+                montant_fmt = f"{int(float(str(montant_raw).replace(' ', ''))):,}".replace(",", " ")
+                st.metric("Montant du loyer", f"{montant_fmt} €")
+            except (ValueError, TypeError):
+                st.metric("Montant du loyer", montant_raw or "Non défini")
         with col3:
             duree = all_vars.get("Durée Bail", all_vars.get("Duree Bail", "Non défini"))
             st.metric("Durée Bail", f"{duree} ans" if duree != "Non défini" else "Non défini")
@@ -172,13 +176,38 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
                 st.markdown("**Président / Gérant**")
                 st.text(all_vars.get("PRESIDENT DE LA SOCIETE", "Non disponible"))
 
-        # All variables expander
+        # All variables expander — deduplicated
         with st.expander("📋 Voir toutes les variables extraites", expanded=False):
-            display_vars = {k: v for k, v in all_vars.items() if not k.startswith("_")}
-            sorted_vars = dict(sorted(display_vars.items()))
+            # Deduplicate: keep only one version per accent-insensitive key
+            import unicodedata
+            def _strip_acc(s):
+                return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
-            missing_count = sum(1 for v in display_vars.values() if not v or str(v).strip() == "")
-            total_count = len(display_vars)
+            seen_keys = set()
+            display_vars = {}
+            for k, v in all_vars.items():
+                if k.startswith("_"):
+                    continue
+                norm = _strip_acc(k.lower())
+                if norm in seen_keys:
+                    continue
+                seen_keys.add(norm)
+                # Format numbers nicely for display
+                display_val = str(v) if v else ""
+                if display_val and display_val.replace(".", "").replace("-", "").isdigit():
+                    try:
+                        num = float(display_val)
+                        if num == int(num):
+                            display_val = f"{int(num):,}".replace(",", " ")
+                        else:
+                            display_val = f"{num:,.2f}".replace(",", " ").replace(".", ",")
+                    except (ValueError, TypeError):
+                        pass
+                display_vars[k] = display_val
+
+            sorted_vars = dict(sorted(display_vars.items()))
+            missing_count = sum(1 for v in sorted_vars.values() if not v.strip())
+            total_count = len(sorted_vars)
 
             if missing_count > 0:
                 st.warning(f"⚠️ {missing_count}/{total_count} variables manquantes")
@@ -190,12 +219,12 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
                 with c1:
                     st.markdown(f"**{key}**")
                 with c2:
-                    if value and str(value).strip():
-                        st.text(str(value))
+                    if value.strip():
+                        st.text(value)
                     else:
                         st.markdown("*Non défini*")
                 with c3:
-                    st.markdown("✅" if value and str(value).strip() else "⚠️")
+                    st.markdown("✅" if value.strip() else "⚠️")
 
         st.markdown("---")
 

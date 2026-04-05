@@ -25,6 +25,12 @@ class LOIGenerator:
         if not est_societe(type_preneur):
             self.clear_list.extend(["PRESIDENT DE LA SOCIETE", "FONCTION INPI"])
 
+        # Clear empty conditions suspensives
+        for i in range(1, 5):
+            key = f"Condition suspensive {i}"
+            if not all_vars.get(key):
+                self.clear_list.append(key)
+
     def get_all_variables(self) -> dict[str, str]:
         """Merge all variable sources into a single dict for rendering.
 
