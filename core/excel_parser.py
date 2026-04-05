@@ -140,6 +140,29 @@ class ExcelParser:
             if nom_c:
                 self._extract_variable(nom_c, ws, row, 4, source_wb, variables)
 
+        # Also read "Liste données BAIL" sheet if present (BAIL-specific variables)
+        bail_sheet_name = None
+        for name in config_wb_formulas.sheetnames:
+            if "liste" in name.lower() and "bail" in name.lower():
+                bail_sheet_name = name
+                break
+        if bail_sheet_name:
+            ws_bail = config_wb_formulas[bail_sheet_name]
+            for row in range(2, ws_bail.max_row + 1):
+                nom_a = self._format_cell_value(ws_bail.cell(row=row, column=1).value)
+                nom_c = self._format_cell_value(ws_bail.cell(row=row, column=3).value)
+
+                if nom_a and nom_a.lower() in ("nom", "source"):
+                    continue
+
+                # Primary (A+B) — only add if not already present
+                if nom_a and nom_a not in variables:
+                    self._extract_variable(nom_a, ws_bail, row, 2, source_wb, variables)
+
+                # Secondary (C+D)
+                if nom_c and nom_c not in variables:
+                    self._extract_variable(nom_c, ws_bail, row, 4, source_wb, variables)
+
         self._add_system_variables(variables)
 
         source_wb.close()

@@ -160,9 +160,9 @@ def evaluer_condition(condition_str: Optional[str], donnees: dict[str, Any]) -> 
             actual = ""
 
         if operator == "=":
-            return str(actual).strip().lower() == expected.lower()
+            return _strip_accents(str(actual).strip().lower()) == _strip_accents(expected.lower())
         if operator == "!=":
-            return str(actual).strip().lower() != expected.lower()
+            return _strip_accents(str(actual).strip().lower()) != _strip_accents(expected.lower())
 
         # Numeric comparisons
         try:

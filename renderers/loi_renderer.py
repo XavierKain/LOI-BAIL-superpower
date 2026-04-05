@@ -175,7 +175,7 @@ class LOIRenderer:
                     tr = row._tr
                     tr_pr = tr.get_or_add_trPr()
                     tr_height = OxmlElement("w:trHeight")
-                    tr_height.set(qn("w:val"), "2400")  # ~4.2cm height
+                    tr_height.set(qn("w:val"), "3600")  # ~6.3cm height for signatures
                     tr_height.set(qn("w:hRule"), "atLeast")
                     tr_pr.append(tr_height)
 

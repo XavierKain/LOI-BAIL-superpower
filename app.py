@@ -57,7 +57,7 @@ def _ensure_source_file(file_content: bytes, file_name: str) -> str:
 
 
 @st.cache_data(show_spinner=False)
-def _parse_excel(file_content: bytes, file_name: str, config_path: str, _cache_key: str):
+def _parse_excel(file_content: bytes, file_name: str, config_path: str, _cache_key: str, _version: str = "v5"):
     """Parse Excel file with daily cache invalidation."""
     source_path = _ensure_source_file(file_content, file_name)
     parser = ExcelParser(source_path, config_path)
@@ -260,8 +260,15 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
             if st.button("🚀 Générer BAIL", type="primary", use_container_width=True, key="btn_gen_bail"):
                 try:
                     with st.spinner("⏳ Génération en cours..."):
+                        # Use source file's Rédaction BAIL sheet if available
+                        import openpyxl as _opx
+                        _wb_check = _opx.load_workbook(source_path, read_only=True)
+                        _has_bail = any("bail" in s.lower() and ("redaction" in s.lower().replace("é","e")) for s in _wb_check.sheetnames)
+                        _wb_check.close()
+                        bail_config = source_path if _has_bail else str(CONFIG_BAIL)
+
                         bail_gen = BailGenerator(
-                            str(CONFIG_BAIL), source_workbook_path=source_path
+                            bail_config, source_workbook_path=source_path
                         )
                         articles = bail_gen.generer_bail(all_vars)
 

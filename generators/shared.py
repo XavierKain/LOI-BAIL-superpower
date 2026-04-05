@@ -34,6 +34,11 @@ _VARIABLE_ALIASES: dict[str, str] = {
     "Duree ferme bail": "Durée ferme Bail",
     "Dure GAPD": "Duree GAPD",
     "Duré GAPD": "Duree GAPD",
+    # Aliases for BAIL conditions that use "du" variant
+    "Durée du Bail": "Durée Bail",
+    "Duree du Bail": "Duree Bail",
+    "Option Accession": "Accession",
+    "Honoraires Preneurs": "Honoraires Preneur",
 }
 
 # Add palier aliases for 1-6
@@ -58,12 +63,16 @@ def normaliser_noms_variables(variables: dict[str, str]) -> dict[str, str]:
     """
     result = dict(variables)
 
-    # Apply alias mapping
+    # Apply alias mapping (bidirectional: copy values both ways)
     for old_name, new_name in _VARIABLE_ALIASES.items():
         if old_name in result and new_name not in result:
             result[new_name] = result[old_name]
         elif old_name in result and new_name in result and not result[new_name]:
             result[new_name] = result[old_name]
+        elif new_name in result and old_name not in result:
+            result[old_name] = result[new_name]
+        elif new_name in result and old_name in result and not result[old_name]:
+            result[old_name] = result[new_name]
 
     # Case-insensitive deduplication
     lower_map: dict[str, list[str]] = {}
