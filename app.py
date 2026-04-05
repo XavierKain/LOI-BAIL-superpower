@@ -64,9 +64,10 @@ def _parse_excel(file_content: bytes, file_name: str, config_path: str, _cache_k
     variables = parser.extract_variables()
     societes = parser.extract_societe_info()
     inpi_data = parser.enrich_from_inpi(variables)
+    cond_mapping = parser.extract_conditions_suspensives_mapping()
     output_name_loi = parser.get_output_filename_loi(variables)
     output_name_bail = parser.get_output_filename_bail(variables)
-    return variables, societes, inpi_data, source_path, output_name_loi, output_name_bail
+    return variables, societes, inpi_data, source_path, output_name_loi, output_name_bail, cond_mapping
 
 
 def main():
@@ -107,8 +108,8 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
         cache_key = f"{uploaded_file.name}_{datetime.now().strftime('%Y-%m-%d')}"
 
         with st.spinner("Extraction des données et enrichissement INPI..."):
-            variables, societes, inpi_data, source_path, output_name_loi, output_name_bail = _parse_excel(
-                file_content, uploaded_file.name, str(CONFIG_LOI), cache_key,
+            variables, societes, inpi_data, source_path, output_name_loi, output_name_bail, cond_mapping = _parse_excel(
+                file_content, uploaded_file.name, str(CONFIG_LOI), cache_key, _version="v6",
             )
 
         # Ensure source file exists on disk (may have been lost between reruns)
@@ -224,7 +225,7 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
                             inpi_data=inpi_data,
                             source_file=Path(source_path),
                         )
-                        generator = LOIGenerator(dossier)
+                        generator = LOIGenerator(dossier, conditions_mapping=cond_mapping)
                         renderer = LOIRenderer(str(TEMPLATE_LOI))
                         output_path = OUTPUT_DIR / output_name_loi
                         OUTPUT_DIR.mkdir(exist_ok=True)

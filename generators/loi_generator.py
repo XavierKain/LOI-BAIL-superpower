@@ -12,8 +12,9 @@ logger = logging.getLogger(__name__)
 class LOIGenerator:
     """LOI document generation logic."""
 
-    def __init__(self, dossier: DossierData):
+    def __init__(self, dossier: DossierData, conditions_mapping: dict[str, str] = None):
         self.dossier = dossier
+        self.conditions_mapping = conditions_mapping or {}
         self.clear_list: list[str] = []
         self._build_clear_list()
 
@@ -25,19 +26,32 @@ class LOIGenerator:
             self.clear_list.extend(["PRESIDENT DE LA SOCIETE", "FONCTION INPI"])
 
     def get_all_variables(self) -> dict[str, str]:
-        """Merge all variable sources into a single dict for rendering."""
+        """Merge all variable sources into a single dict for rendering.
+
+        Also maps condition suspensive values to their LOI text using
+        the conditions mapping from the Excel config.
+        """
         result = dict(self.dossier.variables)
         result.update(self.dossier.variables_derivees)
+
+        # Replace condition suspensive raw names with mapped LOI texts
+        if self.conditions_mapping:
+            for i in range(1, 5):
+                key = f"Condition suspensive {i}"
+                raw_value = result.get(key, "")
+                if raw_value and raw_value in self.conditions_mapping:
+                    result[key] = self.conditions_mapping[raw_value]
+
         return result
 
     def has_palier_data(self) -> bool:
         """Check if any palier data exists."""
-        all_vars = self.get_all_variables()
+        all_vars = {**self.dossier.variables, **self.dossier.variables_derivees}
         return any(all_vars.get(f"Montant du palier {i}") for i in range(1, 7))
 
     def has_conditions_suspensives(self) -> bool:
         """Check if any condition suspensive exists."""
-        all_vars = self.get_all_variables()
+        all_vars = {**self.dossier.variables, **self.dossier.variables_derivees}
         return any(
             all_vars.get(f"Condition suspensive {i}")
             for i in range(1, 5)
@@ -45,5 +59,8 @@ class LOIGenerator:
 
     def has_honoraires_preneurs(self) -> bool:
         """Check if Honoraires Preneurs data exists."""
-        all_vars = self.get_all_variables()
-        return bool(all_vars.get("Honoraires Preneurs"))
+        all_vars = {**self.dossier.variables, **self.dossier.variables_derivees}
+        return bool(
+            all_vars.get("Honoraires Preneurs")
+            or all_vars.get("Honoraires Preneur")
+        )
