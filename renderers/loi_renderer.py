@@ -73,10 +73,19 @@ class LOIRenderer:
         standard_deletes = self.engine.process_document_body(doc, variables, clear_list)
         to_delete.extend(standard_deletes)
 
-        # Phase 3: Delete marked paragraphs
+        # Phase 3: Also mark empty bullet/list paragraphs for deletion
+        # (e.g. "- ;" or "- ." left after clearing empty conditions)
+        import re as _re
+        for paragraph in doc.paragraphs:
+            text = paragraph.text.strip()
+            # Delete paragraphs that are only dashes, tabs, semicolons, dots, spaces
+            if text and not _re.sub(r"[-\t;.\s]", "", text):
+                to_delete.append(paragraph)
+
+        # Phase 4: Delete marked paragraphs
         self.engine.delete_paragraphs(to_delete)
 
-        # Phase 4: Add borders to signature table cells
+        # Phase 5: Add borders to signature table cells
         self._add_signature_borders(doc)
 
         # Phase 5: Update headers/footers
