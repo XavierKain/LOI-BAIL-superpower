@@ -42,6 +42,14 @@ _VARIABLE_ALIASES: dict[str, str] = {
     "Taxe Fonciere": "Taxe foncière",
     "Participation travaux": "Participation Travaux",
     "Charges copro": "Charges Copro",
+    "Droit d'entree": "Droit d'entrée",
+    "Droit d'entrée": "Droit d'entrée",
+    "Honoraires preneurs": "Honoraires Preneur",
+    "Honoraires preneur": "Honoraires Preneur",
+    "Honoraires bailleur": "Honoraires Bailleur",
+    "Durée franchise": "Durée Franchise",
+    "Duree Franchise": "Durée Franchise",
+    "Duree ferme Bail": "Durée ferme Bail",
 }
 
 # Add palier aliases for 1-6

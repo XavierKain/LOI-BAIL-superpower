@@ -48,11 +48,11 @@ def _check_required_files():
 
 
 def _ensure_source_file(file_content: bytes, file_name: str) -> str:
-    """Ensure the uploaded Excel file exists on disk. Returns path."""
+    """Ensure the uploaded Excel file exists on disk. Always re-writes."""
     file_hash = hashlib.sha256(file_content).hexdigest()[:12]
     tmp_path = Path(tempfile.gettempdir()) / f"loi_bail_{file_hash}.xlsx"
-    if not tmp_path.exists():
-        tmp_path.write_bytes(file_content)
+    # Always write to ensure file is fresh (Streamlit Cloud may clean /tmp)
+    tmp_path.write_bytes(file_content)
     return str(tmp_path)
 
 
@@ -109,7 +109,7 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
 
         with st.spinner("Extraction des données et enrichissement INPI..."):
             variables, societes, inpi_data, source_path, output_name_loi, output_name_bail, cond_mapping = _parse_excel(
-                file_content, uploaded_file.name, str(CONFIG_LOI), cache_key, _version="v7",
+                file_content, uploaded_file.name, str(CONFIG_LOI), cache_key, _version="v8",
             )
 
         # Ensure source file exists on disk (may have been lost between reruns)
