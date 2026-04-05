@@ -26,6 +26,22 @@ class ExcelParser:
         """
         self.source_path = Path(source_path)
         self.config_path = Path(config_path)
+        self._effective_config_path = self._resolve_config_path()
+
+    def _resolve_config_path(self) -> Path:
+        """If the source file contains a 'Rédaction LOI' sheet, use it as config."""
+        try:
+            wb = openpyxl.load_workbook(str(self.source_path), read_only=True)
+            sheet_names_lower = [s.lower() for s in wb.sheetnames]
+            wb.close()
+            if "rédaction loi" in sheet_names_lower or "redaction loi" in sheet_names_lower:
+                logger.info(
+                    "Source file contains 'Rédaction LOI' sheet — using it as config."
+                )
+                return self.source_path
+        except Exception as e:
+            logger.debug(f"Could not inspect source file for config sheet: {e}")
+        return self.config_path
 
     def _format_cell_value(self, value) -> Optional[str]:
         """Format a cell value to string."""
@@ -49,12 +65,19 @@ class ExcelParser:
         # Load source workbook (data_only=True to get cached formula values)
         source_wb = openpyxl.load_workbook(str(self.source_path), data_only=True)
 
-        # Load config workbook in dual mode
-        config_wb_values = openpyxl.load_workbook(str(self.config_path), data_only=True)
-        config_wb_formulas = openpyxl.load_workbook(str(self.config_path), data_only=False)
+        # Load config workbook in dual mode (using effective config path)
+        config_wb_values = openpyxl.load_workbook(str(self._effective_config_path), data_only=True)
+        config_wb_formulas = openpyxl.load_workbook(str(self._effective_config_path), data_only=False)
 
-        # Read config mapping from first sheet
-        config_sheet_name = config_wb_values.sheetnames[0]
+        # Find the config sheet: prefer "Rédaction LOI" if present, else first sheet
+        config_sheet_name = None
+        for name in config_wb_values.sheetnames:
+            if name.lower() in ("rédaction loi", "redaction loi"):
+                config_sheet_name = name
+                break
+        if not config_sheet_name:
+            config_sheet_name = config_wb_values.sheetnames[0]
+
         ws_values = config_wb_values[config_sheet_name]
         ws_formulas = config_wb_formulas[config_sheet_name]
 
@@ -97,28 +120,59 @@ class ExcelParser:
         return variables
 
     def extract_societe_info(self) -> dict[str, SocieteInfo]:
-        """Extract Societe Bailleur info from config workbook."""
-        config_wb = openpyxl.load_workbook(str(self.config_path), data_only=True)
+        """Extract Societe Bailleur info from config workbook.
+
+        Looks for data in two places:
+        1. A dedicated 'Société Bailleur' sheet (legacy format).
+        2. Embedded in the 'Rédaction LOI' sheet (rows with a 'Société Bailleur'
+           header row, typically row 35+, col A=name, B=header, D=footer).
+        """
+        config_wb = openpyxl.load_workbook(str(self._effective_config_path), data_only=True)
 
         result: dict[str, SocieteInfo] = {}
-        # Find sheet by name (handle accent variants)
+
+        # Strategy 1: dedicated sheet
         sheet_name = None
         for name in config_wb.sheetnames:
             if "bailleur" in name.lower() and ("societ" in name.lower() or "société" in name.lower()):
                 sheet_name = name
                 break
-        if not sheet_name:
-            config_wb.close()
-            return result
 
-        ws = config_wb[sheet_name]
-        for row in range(2, ws.max_row + 1):
-            nom = self._format_cell_value(ws.cell(row=row, column=1).value)
-            if not nom:
-                continue
-            header = self._format_cell_value(ws.cell(row=row, column=2).value) or nom
-            footer = self._format_cell_value(ws.cell(row=row, column=3).value) or ""
-            result[nom] = SocieteInfo(nom=nom, header_text=header, footer_text=footer)
+        if sheet_name:
+            ws = config_wb[sheet_name]
+            for row in range(2, ws.max_row + 1):
+                nom = self._format_cell_value(ws.cell(row=row, column=1).value)
+                if not nom:
+                    continue
+                header = self._format_cell_value(ws.cell(row=row, column=2).value) or nom
+                footer = self._format_cell_value(ws.cell(row=row, column=3).value) or ""
+                result[nom] = SocieteInfo(nom=nom, header_text=header, footer_text=footer)
+
+        # Strategy 2: embedded in "Rédaction LOI" sheet (new unified format)
+        if not result:
+            redaction_sheet = None
+            for name in config_wb.sheetnames:
+                if name.lower() in ("rédaction loi", "redaction loi"):
+                    redaction_sheet = name
+                    break
+            if redaction_sheet:
+                ws = config_wb[redaction_sheet]
+                # Find the "Société Bailleur" header row
+                start_row = None
+                for row in range(1, ws.max_row + 1):
+                    val = self._format_cell_value(ws.cell(row=row, column=1).value)
+                    if val and "bailleur" in val.lower() and ("societ" in val.lower() or "société" in val.lower()):
+                        start_row = row + 1
+                        break
+                if start_row:
+                    for row in range(start_row, ws.max_row + 1):
+                        nom = self._format_cell_value(ws.cell(row=row, column=1).value)
+                        if not nom:
+                            break  # Empty row = end of société data
+                        header = self._format_cell_value(ws.cell(row=row, column=2).value) or nom
+                        # Footer is in column D (col 4) in the new format
+                        footer = self._format_cell_value(ws.cell(row=row, column=4).value) or ""
+                        result[nom] = SocieteInfo(nom=nom, header_text=header, footer_text=footer)
 
         config_wb.close()
         return result

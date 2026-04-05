@@ -6,6 +6,8 @@ from pathlib import Path
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
 from core.models import SocieteInfo
 from generators.loi_generator import LOIGenerator
@@ -74,7 +76,10 @@ class LOIRenderer:
         # Phase 3: Delete marked paragraphs
         self.engine.delete_paragraphs(to_delete)
 
-        # Phase 4: Update headers/footers
+        # Phase 4: Add borders to signature table cells
+        self._add_signature_borders(doc)
+
+        # Phase 5: Update headers/footers
         bailleur_name = (
             variables.get("Société Bailleur", "")
             or variables.get("Societe Bailleur", "")
@@ -111,6 +116,7 @@ class LOIRenderer:
             hr = hp.add_run(societe.header_text)
             hr.font.bold = True
             hr.font.size = Pt(22)
+            hr.font.name = "Times New Roman"
             hp.paragraph_format.space_after = Pt(12)
 
             # Footer
@@ -123,5 +129,54 @@ class LOIRenderer:
                 fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 fr = fp.add_run(line)
                 fr.font.size = Pt(9)
+                fr.font.name = "Times New Roman"
                 if idx == 0:
                     fp.paragraph_format.space_before = Pt(12)
+
+    @staticmethod
+    def _set_cell_border(cell, **kwargs):
+        """Set borders on a table cell.
+
+        Usage: _set_cell_border(cell, top={"sz": 4, "val": "single", "color": "000000"}, ...)
+        Supported keys: top, bottom, left, right.
+        """
+        tc = cell._tc
+        tc_pr = tc.get_or_add_tcPr()
+        tc_borders = tc_pr.find(qn("w:tcBorders"))
+        if tc_borders is None:
+            tc_borders = OxmlElement("w:tcBorders")
+            tc_pr.append(tc_borders)
+        for edge, attrs in kwargs.items():
+            element = OxmlElement(f"w:{edge}")
+            for attr_name, attr_val in attrs.items():
+                element.set(qn(f"w:{attr_name}"), str(attr_val))
+            # Remove existing border element for this edge
+            existing = tc_borders.find(qn(f"w:{edge}"))
+            if existing is not None:
+                tc_borders.remove(existing)
+            tc_borders.append(element)
+
+    def _add_signature_borders(self, document):
+        """Add borders (encadrement) to signature table cells."""
+        border_style = {"sz": "4", "val": "single", "color": "000000", "space": "0"}
+        for table in document.tables:
+            # Identify signature tables: look for "Bailleur" or "Candidat" in cells
+            is_signature_table = False
+            for row in table.rows:
+                for cell in row.cells:
+                    text_lower = cell.text.lower()
+                    if "bailleur" in text_lower or "candidat" in text_lower:
+                        is_signature_table = True
+                        break
+                if is_signature_table:
+                    break
+            if is_signature_table:
+                for row in table.rows:
+                    for cell in row.cells:
+                        self._set_cell_border(
+                            cell,
+                            top=border_style,
+                            bottom=border_style,
+                            left=border_style,
+                            right=border_style,
+                        )

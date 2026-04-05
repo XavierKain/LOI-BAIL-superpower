@@ -78,7 +78,7 @@ def test_type_bail_other():
 def test_date_signature():
     variables = {"Date d'aujourd'hui": "01/04/2026"}
     result = calculer_variables_derivees(variables, None)
-    assert result["Date de signature"] == "22/04/2026"
+    assert result["Date de signature"] == "16/04/2026"
 
 
 def test_date_offre_valable():

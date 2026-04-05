@@ -192,7 +192,7 @@ def calculer_variables_derivees(
     if date_aujourdhui_str:
         try:
             date_aujourdhui = datetime.strptime(date_aujourdhui_str.strip(), "%d/%m/%Y")
-            result["Date de signature"] = (date_aujourdhui + relativedelta(days=21)).strftime("%d/%m/%Y")
+            result["Date de signature"] = (date_aujourdhui + relativedelta(days=15)).strftime("%d/%m/%Y")
             result["Date offre valable"] = (date_aujourdhui + relativedelta(days=7)).strftime("%d/%m/%Y")
         except ValueError:
             logger.warning(f"Cannot parse Date d'aujourd'hui: {date_aujourdhui_str}")
