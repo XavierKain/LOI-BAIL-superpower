@@ -83,6 +83,27 @@ def _strip_accents(text: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
+def _auto_bold_amounts(text: str) -> str:
+    """Wrap monetary amounts with <b> tags for bold rendering.
+
+    Matches patterns like:
+    - 140 000 € HT HC (CENT QUARANTE MILLE EUROS HORS TAXES ET HORS CHARGES)
+    - 30 000 € HT (TRENTE MILLE EUROS HORS TAXES)
+    - 15 000 € HT
+    - 40 000 € (QUARANTE MILLE EUROS).
+    Skips amounts already inside <b> tags.
+    """
+    # Pattern: number with spaces + € + optional suffix + optional (LETTRES)
+    pattern = re.compile(
+        r'(?<!<b>)'  # not already bolded
+        r'([\d][\d\s\xa0]*\s*€'  # number + €
+        r'(?:\s*(?:HT|HC|TTC|HORS TAXES|HORS CHARGES|ET HORS (?:TAXES|CHARGES)))*'  # optional HT/HC/TTC
+        r'(?:\s*\([A-ZÀ-Ü\s\'-]+\))?'  # optional (EN LETTRES)
+        r'\.?)'  # optional trailing period
+    )
+    return pattern.sub(r'<b>\1</b>', text)
+
+
 def _lookup_variable(name: str, donnees: dict) -> Any:
     """Look up a variable by name with case/accent-insensitive fallback."""
     # Exact match
@@ -490,6 +511,9 @@ class BailGenerator:
                         contenu = contenu.replace(f"[{match}]", str(value))
                 else:
                     manquants.append(match)
+
+            # Auto-bold amounts: "N €" or "N € HT..." followed by optional "(LETTRES)"
+            contenu = _auto_bold_amounts(contenu)
 
             articles.append(
                 ArticleResult(

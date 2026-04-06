@@ -37,13 +37,20 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 ROLES_LIBELLES = {
     "30": "President",
-    "71": "President",
+    "73": "President",        # Président de SAS
     "50": "Gerant",
     "10": "Directeur general",
+    "53": "Directeur general", # Directeur Général (variant)
 }
 
-# Priority order when scanning pouvoirs
-_ROLES_DIRIGEANTS = ["30", "71", "50", "10"]
+# Roles to EXCLUDE (not real dirigeants)
+_ROLES_EXCLUS = {
+    "71",   # Commissaire aux comptes
+    "72",   # Commissaire aux comptes suppléant
+}
+
+# Priority order when scanning pouvoirs: président first, then gérant/DG
+_ROLES_DIRIGEANTS = ["30", "73", "50", "10", "53"]
 
 # Qualities that identify a real dirigeant on the scraped page
 _QUALITES_DIRIGEANT = [
@@ -243,26 +250,30 @@ class INPIClient:
                 return None
 
             # Priority tiers: président first, then gérant/DG
-            priority_roles = [["30", "71"], ["50", "10"]]
+            priority_roles = [["30", "73"], ["50", "10", "53"]]
 
-            # Pass 1: known roles in priority order
+            # Pass 1: known roles in priority order, skip excluded roles
             for tier in priority_roles:
                 for pouvoir in pouvoirs:
                     role = pouvoir.get("roleEntreprise")
                     if not pouvoir.get("actif") or role not in tier:
+                        continue
+                    if role in _ROLES_EXCLUS:
                         continue
                     name = _extract_name_from_pouvoir(pouvoir)
                     if name:
                         fonction = ROLES_LIBELLES.get(role, "Dirigeant")
                         return name, fonction
 
-            # Pass 2: any active pouvoir with any role (some companies use non-standard codes)
+            # Pass 2: any active pouvoir with any role, skip excluded
             for pouvoir in pouvoirs:
                 if not pouvoir.get("actif"):
                     continue
+                role = pouvoir.get("roleEntreprise", "")
+                if role in _ROLES_EXCLUS:
+                    continue
                 name = _extract_name_from_pouvoir(pouvoir)
                 if name:
-                    role = pouvoir.get("roleEntreprise", "")
                     fonction = ROLES_LIBELLES.get(role, "Dirigeant")
                     return name, fonction
 
