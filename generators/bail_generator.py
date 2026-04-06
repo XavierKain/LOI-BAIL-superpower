@@ -111,10 +111,14 @@ def evaluer_condition(condition_str: Optional[str], donnees: dict[str, Any]) -> 
     - "Si [X] non vide" -> non-empty check
     - "Si plusieurs conditions suspensives" -> count check
     """
-    if not condition_str or not str(condition_str).strip():
+    if not condition_str:
+        return True
+    # Handle pandas NaN and empty strings
+    cond_s = str(condition_str).strip()
+    if not cond_s or cond_s == "nan" or cond_s == "None":
         return True
 
-    condition = _normalize_quotes(str(condition_str).strip())
+    condition = _normalize_quotes(cond_s)
 
     # Special: multiple conditions suspensives
     if "plusieurs conditions suspensives" in condition.lower():
