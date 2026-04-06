@@ -271,23 +271,32 @@ class BailRenderer:
         if (is_major_title or is_subtitle) and not heading_level:
             paragraph.paragraph_format.space_before = Pt(6)
 
-        # Parse formatting tags and create runs with template font
+        # Parse formatting tags and create runs with template font.
+        # Handle \n within text as Word line breaks (<w:br/>).
         segments = parse_formatting_tags(clean_text)
         for seg_text, formatting in segments:
             if not seg_text:
                 continue
-            run = paragraph.add_run(seg_text)
-            # Apply template font (preserve Calibri from template)
-            if not heading_level:
-                run.font.name = template_font_name
-                if template_font_size:
-                    run.font.size = template_font_size
-            if formatting.get("bold") or is_major_title or is_subtitle:
-                run.font.bold = True
-            if formatting.get("italic"):
-                run.font.italic = True
-            if formatting.get("underline") or is_major_title:
-                run.font.underline = True
+            # Split on \n to handle inline line breaks
+            lines = seg_text.split("\n")
+            for line_idx, line in enumerate(lines):
+                if line:
+                    run = paragraph.add_run(line)
+                    # Apply template font (preserve Calibri from template)
+                    if not heading_level:
+                        run.font.name = template_font_name
+                        if template_font_size:
+                            run.font.size = template_font_size
+                    if formatting.get("bold") or is_major_title or is_subtitle:
+                        run.font.bold = True
+                    if formatting.get("italic"):
+                        run.font.italic = True
+                    if formatting.get("underline") or is_major_title:
+                        run.font.underline = True
+                # Add line break between lines (not after the last one)
+                if line_idx < len(lines) - 1:
+                    run = paragraph.add_run()
+                    run._element.append(etree.SubElement(run._element, qn("w:br")))
 
     def _clean_unreplaced_placeholders(self, doc):
         """Remove paragraphs that contain only {{...}} placeholders."""

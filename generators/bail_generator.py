@@ -458,6 +458,13 @@ class BailGenerator:
 
             contenu = "\n\n".join(textes)
 
+            # Remove instruction/meta lines (Excel notes not meant for the document)
+            contenu = re.sub(
+                r"En fonction du n° de SIRET[^\n]*(?:Pappers|Validation)[^\n]*:?\s*\n?",
+                "",
+                contenu,
+            ).strip()
+
             # For Article 26.1 (Paliers): remove paragraph blocks for paliers
             # that have no data (e.g. palier 3 when only 2 paliers exist)
             if output_key == "Article 26.1":

@@ -178,6 +178,7 @@ class INPIClient:
         """Return (nom_dirigeant, fonction) from composition.pouvoirs or (None, None).
 
         Prioritizes président (role 30/71) over gérant (50) and DG (10).
+        Handles both INDIVIDU and PERSONNE_MORALE types.
         """
         try:
             pouvoirs = personne_morale.get("composition", {}).get("pouvoirs", [])
@@ -185,16 +186,28 @@ class INPIClient:
                 logger.info("No pouvoirs found in API response")
                 return None, None
 
+            # Log all pouvoirs for debugging
+            for idx, p in enumerate(pouvoirs):
+                logger.info(
+                    "Pouvoir %d: role=%s, actif=%s, type=%s, individu=%s, personne_morale=%s",
+                    idx,
+                    p.get("roleEntreprise"),
+                    p.get("actif"),
+                    p.get("typeDePersonne"),
+                    bool(p.get("individu")),
+                    bool(p.get("personneMorale")),
+                )
+
             # Priority tiers: président first, then gérant/DG
             priority_roles = [["30", "71"], ["50", "10"]]
+
+            # Pass 1: look for INDIVIDU type
             for tier in priority_roles:
                 for pouvoir in pouvoirs:
                     role = pouvoir.get("roleEntreprise")
-                    if (
-                        pouvoir.get("actif")
-                        and role in tier
-                        and pouvoir.get("typeDePersonne") == "INDIVIDU"
-                    ):
+                    if not pouvoir.get("actif") or role not in tier:
+                        continue
+                    if pouvoir.get("typeDePersonne") == "INDIVIDU":
                         desc = pouvoir.get("individu", {}).get("descriptionPersonne", {})
                         nom = desc.get("nom", "")
                         prenoms = desc.get("prenoms", [])
@@ -203,7 +216,45 @@ class INPIClient:
                             dirigeant = _format_dirigeant_name(nom, prenom)
                             fonction = ROLES_LIBELLES.get(role, "Dirigeant")
                             return dirigeant, fonction
-            logger.info("Pouvoirs found (%d) but no matching dirigeant role", len(pouvoirs))
+
+            # Pass 2: look for PERSONNE_MORALE type (company acting as president)
+            # In this case, we need to look deeper for the actual representative
+            for tier in priority_roles:
+                for pouvoir in pouvoirs:
+                    role = pouvoir.get("roleEntreprise")
+                    if not pouvoir.get("actif") or role not in tier:
+                        continue
+                    tp = pouvoir.get("typeDePersonne", "")
+                    if tp in ("PERSONNE_MORALE", "PERSONNEMORALE"):
+                        pm_data = pouvoir.get("personneMorale", {})
+                        denomination = pm_data.get("denomination", "")
+                        if denomination:
+                            fonction = ROLES_LIBELLES.get(role, "Dirigeant")
+                            return denomination, fonction
+
+            # Pass 3: any active pouvoir with a known role (fallback)
+            all_roles = ["30", "71", "50", "10"]
+            for pouvoir in pouvoirs:
+                role = pouvoir.get("roleEntreprise")
+                if pouvoir.get("actif") and role in all_roles:
+                    # Try individu
+                    individu = pouvoir.get("individu", {})
+                    desc = individu.get("descriptionPersonne", {})
+                    nom = desc.get("nom", "")
+                    if nom:
+                        prenoms = desc.get("prenoms", [])
+                        prenom = prenoms[0] if prenoms else ""
+                        dirigeant = _format_dirigeant_name(nom, prenom)
+                        fonction = ROLES_LIBELLES.get(role, "Dirigeant")
+                        return dirigeant, fonction
+                    # Try personneMorale
+                    pm_data = pouvoir.get("personneMorale", {})
+                    denomination = pm_data.get("denomination", "")
+                    if denomination:
+                        fonction = ROLES_LIBELLES.get(role, "Dirigeant")
+                        return denomination, fonction
+
+            logger.info("Pouvoirs found (%d) but no extractable dirigeant", len(pouvoirs))
         except Exception as exc:
             logger.error("Error extracting dirigeant from API: %s", exc)
         return None, None
