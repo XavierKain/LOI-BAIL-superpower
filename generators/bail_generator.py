@@ -459,11 +459,16 @@ class BailGenerator:
             contenu = "\n\n".join(textes)
 
             # Remove instruction/meta lines (Excel notes not meant for the document)
+            # Pattern: "En fonction du n° de SIRET ... Pappers : \n" followed by optional leading quote
             contenu = re.sub(
-                r"En fonction du n° de SIRET[^\n]*(?:Pappers|Validation)[^\n]*:?\s*\n?",
+                r'En fonction du n[°o] de SIRET[^\n]*(?:Pappers|Validation)[^\n]*:?\s*\n?\s*(?:"|\u201c)?',
                 "",
                 contenu,
+                flags=re.IGNORECASE,
             ).strip()
+            # Remove trailing orphan closing quote if the opening was removed
+            if contenu.endswith('"') or contenu.endswith('\u201d'):
+                contenu = contenu[:-1].rstrip()
 
             # For Article 26.1 (Paliers): remove paragraph blocks for paliers
             # that have no data (e.g. palier 3 when only 2 paliers exist)
