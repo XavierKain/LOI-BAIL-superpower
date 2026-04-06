@@ -76,6 +76,17 @@ class WordEngine:
         if name.endswith(" en lettres"):
             base_name = name[:-len(" en lettres")]
             base_value = self._lookup_variable(base_name, variables)
+            # Also try common variants (e.g. "Montant Palier 1" -> "Montant du palier 1")
+            if not base_value:
+                variants = [
+                    base_name.replace("Palier", "du palier").replace("Montant ", "Montant du ") if "Palier" in base_name else None,
+                    base_name.replace("Loyer année", "Loyer année") if "Loyer" in base_name else None,
+                ]
+                for v in variants:
+                    if v:
+                        base_value = self._lookup_variable(v, variables)
+                        if base_value:
+                            break
             if base_value:
                 try:
                     num = float(str(base_value).replace(" ", "").replace(",", ".").replace("\u00a0", ""))

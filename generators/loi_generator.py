@@ -22,7 +22,11 @@ class LOIGenerator:
         """Build list of placeholders to replace with empty string."""
         all_vars = {**self.dossier.variables, **self.dossier.variables_derivees}
         type_preneur = all_vars.get("Type Preneur", "")
-        if not est_societe(type_preneur):
+
+        # Only clear PRESIDENT/FONCTION if preneur is NOT a societe
+        # AND we don't have INPI data for these fields
+        has_president = bool(all_vars.get("PRESIDENT DE LA SOCIETE", "").strip())
+        if not est_societe(type_preneur) and not has_president:
             self.clear_list.extend(["PRESIDENT DE LA SOCIETE", "FONCTION INPI"])
 
         # Clear empty conditions suspensives

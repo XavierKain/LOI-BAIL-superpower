@@ -253,6 +253,11 @@ class BailRenderer:
         for run in paragraph.runs:
             run.text = ""
 
+        # Detect if entire text is a title (ALL CAPS or starts with "ARTICLE")
+        is_title_line = (
+            clean_text == clean_text.upper() and len(clean_text) > 5
+        ) or clean_text.startswith("ARTICLE ")
+
         # Parse formatting tags and create runs with template font
         segments = parse_formatting_tags(clean_text)
         for seg_text, formatting in segments:
@@ -264,11 +269,11 @@ class BailRenderer:
                 run.font.name = template_font_name
                 if template_font_size:
                     run.font.size = template_font_size
-            if formatting.get("bold"):
+            if formatting.get("bold") or is_title_line:
                 run.font.bold = True
             if formatting.get("italic"):
                 run.font.italic = True
-            if formatting.get("underline"):
+            if formatting.get("underline") or is_title_line:
                 run.font.underline = True
 
     def _clean_unreplaced_placeholders(self, doc):

@@ -50,13 +50,24 @@ _VARIABLE_ALIASES: dict[str, str] = {
     "Durée franchise": "Durée Franchise",
     "Duree Franchise": "Durée Franchise",
     "Duree ferme Bail": "Durée ferme Bail",
+    "Durée ferme": "Durée ferme Bail",
+    "Duree ferme": "Durée ferme Bail",
+    "Periode paliers": "Periode paliers",
+    "Durée du DG": "Durée DG",
+    "Duree du DG": "Duree DG",
+    "Montant du DG en lettres": "Montant du DG en lettres",
 }
 
-# Add palier aliases for 1-6
+# Add palier aliases for 1-6 (all variants: with/without "du", capitalization)
 for _i in range(1, 7):
     _VARIABLE_ALIASES[f"Montant Palier {_i}"] = f"Montant du palier {_i}"
     _VARIABLE_ALIASES[f"Montant du Palier {_i}"] = f"Montant du palier {_i}"
     _VARIABLE_ALIASES[f"Montant palier {_i}"] = f"Montant du palier {_i}"
+    # "en lettres" variants will be resolved by the word engine
+    _VARIABLE_ALIASES[f"Montant Palier {_i} en lettres"] = f"Montant du palier {_i} en lettres"
+    _VARIABLE_ALIASES[f"Montant du Palier {_i} en lettres"] = f"Montant du palier {_i} en lettres"
+    # Loyer année variants
+    _VARIABLE_ALIASES[f"Loyer année {_i} en lettres"] = f"Loyer année {_i} en lettres"
 
 # Legal forms for societe detection (exact match, case-insensitive)
 _FORMES_JURIDIQUES = {
@@ -74,16 +85,16 @@ def normaliser_noms_variables(variables: dict[str, str]) -> dict[str, str]:
     """
     result = dict(variables)
 
-    # Apply alias mapping (bidirectional: copy values both ways)
-    for old_name, new_name in _VARIABLE_ALIASES.items():
-        if old_name in result and new_name not in result:
-            result[new_name] = result[old_name]
-        elif old_name in result and new_name in result and not result[new_name]:
-            result[new_name] = result[old_name]
-        elif new_name in result and old_name not in result:
-            result[old_name] = result[new_name]
-        elif new_name in result and old_name in result and not result[old_name]:
-            result[old_name] = result[new_name]
+    # Apply alias mapping (bidirectional: ensure all variants have the value)
+    # Run twice to propagate through chains
+    for _ in range(2):
+        for old_name, new_name in _VARIABLE_ALIASES.items():
+            old_val = result.get(old_name, "")
+            new_val = result.get(new_name, "")
+            if old_val and not new_val:
+                result[new_name] = old_val
+            elif new_val and not old_val:
+                result[old_name] = new_val
 
     # Case-insensitive deduplication
     lower_map: dict[str, list[str]] = {}
@@ -241,6 +252,7 @@ def calculer_variables_derivees(
 
     # --- Paliers ---
     loyer_base = _clean_number(_get_var(variables, "Montant du loyer", "Montant du loyer "))
+    palier_count = 0
     if loyer_base:
         for i in range(1, 7):
             loyer_annee = _clean_number(_get_var(variables, f"Loyer année {i}", f"Loyer annee {i}"))
@@ -248,6 +260,11 @@ def calculer_variables_derivees(
                 remise = loyer_base - loyer_annee
                 if remise > 0:
                     result[f"Montant du palier {i}"] = formater_nombre(int(remise))
+                    palier_count = i
+    if palier_count > 0:
+        # Periode paliers = ordinal of the last palier year + 1
+        ordinal_map = {1: "deuxième", 2: "troisième", 3: "quatrième", 4: "cinquième", 5: "sixième", 6: "septième"}
+        result["Periode paliers"] = ordinal_map.get(palier_count, f"{palier_count + 1}ème")
 
     # --- Surfaces ---
     surface_totale = _clean_number(_get_var(variables, "Surface totale"))

@@ -123,9 +123,16 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
         # Ensure source file exists on disk (may have been lost between reruns)
         source_path = _ensure_source_file(file_content, uploaded_file.name)
 
-        # Normalize + derive
+        # Normalize + derive + re-normalize to propagate aliases to derived vars
         variables = normaliser_noms_variables(variables)
         variables_derivees = calculer_variables_derivees(variables, inpi_data)
+        # Re-normalize the merged dict to populate all alias variants
+        _merged = {**variables, **variables_derivees}
+        _merged = normaliser_noms_variables(_merged)
+        # Update derivees with any new aliases
+        for k, v in _merged.items():
+            if k not in variables and k not in variables_derivees:
+                variables_derivees[k] = v
 
         # Merge all variables for display
         all_vars = {**variables, **variables_derivees}
