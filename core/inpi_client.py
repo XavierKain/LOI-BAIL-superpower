@@ -175,24 +175,35 @@ class INPIClient:
 
     @staticmethod
     def _extract_dirigeant_from_api(personne_morale: dict) -> tuple:
-        """Return (nom_dirigeant, fonction) from composition.pouvoirs or (None, None)."""
+        """Return (nom_dirigeant, fonction) from composition.pouvoirs or (None, None).
+
+        Prioritizes président (role 30/71) over gérant (50) and DG (10).
+        """
         try:
             pouvoirs = personne_morale.get("composition", {}).get("pouvoirs", [])
-            for pouvoir in pouvoirs:
-                role = pouvoir.get("roleEntreprise")
-                if (
-                    pouvoir.get("actif")
-                    and role in _ROLES_DIRIGEANTS
-                    and pouvoir.get("typeDePersonne") == "INDIVIDU"
-                ):
-                    desc = pouvoir.get("individu", {}).get("descriptionPersonne", {})
-                    nom = desc.get("nom", "")
-                    prenoms = desc.get("prenoms", [])
-                    if nom:
-                        prenom = prenoms[0] if prenoms else ""
-                        dirigeant = _format_dirigeant_name(nom, prenom)
-                        fonction = ROLES_LIBELLES.get(role, "Dirigeant")
-                        return dirigeant, fonction
+            if not pouvoirs:
+                logger.info("No pouvoirs found in API response")
+                return None, None
+
+            # Priority tiers: président first, then gérant/DG
+            priority_roles = [["30", "71"], ["50", "10"]]
+            for tier in priority_roles:
+                for pouvoir in pouvoirs:
+                    role = pouvoir.get("roleEntreprise")
+                    if (
+                        pouvoir.get("actif")
+                        and role in tier
+                        and pouvoir.get("typeDePersonne") == "INDIVIDU"
+                    ):
+                        desc = pouvoir.get("individu", {}).get("descriptionPersonne", {})
+                        nom = desc.get("nom", "")
+                        prenoms = desc.get("prenoms", [])
+                        if nom:
+                            prenom = prenoms[0] if prenoms else ""
+                            dirigeant = _format_dirigeant_name(nom, prenom)
+                            fonction = ROLES_LIBELLES.get(role, "Dirigeant")
+                            return dirigeant, fonction
+            logger.info("Pouvoirs found (%d) but no matching dirigeant role", len(pouvoirs))
         except Exception as exc:
             logger.error("Error extracting dirigeant from API: %s", exc)
         return None, None
@@ -643,16 +654,32 @@ class INPIClient:
 
         # Dirigeant (API)
         dirigeant, fonction = self._extract_dirigeant_from_api(pm)
+        logger.info("INPI API dirigeant extraction: dirigeant=%r, fonction=%r", dirigeant, fonction)
 
         # Fallback: scrape dirigeant if API had none
         if not dirigeant:
+            logger.info("No dirigeant from API, falling back to scraping for SIREN %s", siren)
             try:
                 scraped = self._scrape_inpi_beautifulsoup(siren)
                 if scraped:
                     dirigeant = scraped.get("PRESIDENT DE LA SOCIETE", "")
                     fonction = scraped.get("FONCTION INPI", "")
-            except Exception:
-                pass
+                    logger.info("BS scraping dirigeant result: %r / %r", dirigeant, fonction)
+                else:
+                    logger.warning("BS scraping returned no data for SIREN %s", siren)
+            except Exception as exc:
+                logger.warning("BS scraping failed for dirigeant: %s", exc)
+
+            # Playwright fallback if BS scraping didn't find dirigeant
+            if not dirigeant:
+                try:
+                    scraped_pw = self._scrape_inpi_playwright(siren)
+                    if scraped_pw:
+                        dirigeant = scraped_pw.get("PRESIDENT DE LA SOCIETE", "")
+                        fonction = scraped_pw.get("FONCTION INPI", "")
+                        logger.info("Playwright dirigeant result: %r / %r", dirigeant, fonction)
+                except Exception as exc:
+                    logger.warning("Playwright scraping failed for dirigeant: %s", exc)
 
         return InpiData(
             nom_societe=nom_societe,

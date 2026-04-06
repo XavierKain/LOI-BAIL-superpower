@@ -256,17 +256,19 @@ class BailRenderer:
         for run in paragraph.runs:
             run.text = ""
 
-        # Detect if entire text is a title (ALL CAPS, starts with "ARTICLE",
-        # or numbered subtitle like "1. Title" or "26.1. – Title")
-        is_title_line = (
+        # Detect title types:
+        # - ALL CAPS or "ARTICLE" prefix → bold + underline
+        # - Numbered subtitle (7.3., 1., 26.1. –) → bold only
+        is_major_title = (
             clean_text == clean_text.upper() and len(clean_text) > 5
         ) or clean_text.startswith("ARTICLE ")
-        # Numbered subtitle: "1. Text", "2. Text", "26.1. – Text"
-        if not is_title_line and re.match(r"^\d+\.?\s", clean_text):
-            is_title_line = True
+        is_subtitle = (
+            not is_major_title
+            and re.match(r"^\d+[\d.]*\.?\s", clean_text)
+        )
 
         # Add spacing before title/subtitle lines
-        if is_title_line and not heading_level:
+        if (is_major_title or is_subtitle) and not heading_level:
             paragraph.paragraph_format.space_before = Pt(6)
 
         # Parse formatting tags and create runs with template font
@@ -280,11 +282,11 @@ class BailRenderer:
                 run.font.name = template_font_name
                 if template_font_size:
                     run.font.size = template_font_size
-            if formatting.get("bold") or is_title_line:
+            if formatting.get("bold") or is_major_title or is_subtitle:
                 run.font.bold = True
             if formatting.get("italic"):
                 run.font.italic = True
-            if formatting.get("underline") or is_title_line:
+            if formatting.get("underline") or is_major_title:
                 run.font.underline = True
 
     def _clean_unreplaced_placeholders(self, doc):
