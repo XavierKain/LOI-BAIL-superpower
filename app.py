@@ -328,16 +328,40 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
                     with st.expander("🔍 Variables BAIL clés", expanded=False):
                         bail_keys = [
                             "Société Bailleur", "Type Preneur", "Nom Preneur",
+                            "N° DE SIRET", "NOM DE LA SOCIETE", "TYPE DE SOCIETE",
+                            "CAPITAL SOCIAL", "LOCALITE RCS", "ADRESSE DE DOMICILIATION",
+                            "PRESIDENT DE LA SOCIETE", "FONCTION INPI",
                             "Durée Bail", "Durée ferme Bail", "Date de prise d'effet",
-                            "Montant du loyer", "Loyer année 1", "Loyer année 2",
-                            "Montant du palier 1", "Montant du palier 2",
+                            "Montant du loyer",
+                        ]
+                        # Dynamically add Loyer année / palier for all existing years
+                        for _pi in range(1, 7):
+                            ly = all_vars.get(f"Loyer année {_pi}", "")
+                            mp = all_vars.get(f"Montant du palier {_pi}", "")
+                            if ly or mp:
+                                bail_keys.append(f"Loyer année {_pi}")
+                                bail_keys.append(f"Montant du palier {_pi}")
+                        bail_keys.extend([
+                            "Periode paliers",
                             "Actualisation", "Paiement", "Accession",
                             "Droit d'entrée", "Durée DG", "Montant du DG",
                             "Durée Franchise", "Honoraires Preneur", "DPE",
                             "Destination", "Enseigne", "Restauration sans extraction",
                             "Condition suspensive 1", "Condition suspensive 2",
-                        ]
+                            "Condition suspensive 3", "Condition suspensive 4",
+                            "Adresse Locaux Loues", "Numero et rue",
+                            "Ville ou arrondissement", "Surface totale", "Surface RDC",
+                            "Taxe foncière", "Charges Copro", "Participation Travaux",
+                            "Date de signature",
+                        ])
+                        # Deduplicate while preserving order
+                        _seen_bk = set()
+                        bail_keys_dedup = []
                         for bk in bail_keys:
+                            if bk not in _seen_bk:
+                                _seen_bk.add(bk)
+                                bail_keys_dedup.append(bk)
+                        for bk in bail_keys_dedup:
                             val = all_vars.get(bk, "")
                             icon = "✅" if val else "⚠️"
                             st.markdown(f"{icon} **{bk}** = {val if val else '*vide*'}")

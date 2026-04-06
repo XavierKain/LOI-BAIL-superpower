@@ -307,58 +307,64 @@ class INPIClient:
                         if current:
                             dirigeants.append(current)
 
-                        qualites_ok = [
-                            "gerant", "g\u00e9rant",
-                            "president", "pr\u00e9sident",
-                            "directeur general", "directeur g\u00e9n\u00e9ral",
-                            "president du conseil d'administration",
-                            "pr\u00e9sident du conseil d'administration",
-                            "president du conseil de surveillance",
-                            "pr\u00e9sident du conseil de surveillance",
+                        # Priority tiers: président first, then gérant/DG
+                        _priority_tiers = [
+                            [
+                                "president", "président",
+                                "president du conseil d'administration",
+                                "président du conseil d'administration",
+                                "president du conseil de surveillance",
+                                "président du conseil de surveillance",
+                            ],
+                            [
+                                "gerant", "gérant",
+                                "directeur general", "directeur général",
+                            ],
                         ]
 
-                        for d in dirigeants:
-                            qualite = d.get("Qualit\u00e9", d.get("Qualite", ""))
-                            if "commissaire" in qualite.lower():
-                                continue
-                            is_dirigeant = any(
-                                q in qualite.lower() for q in qualites_ok
-                            )
-                            if not is_dirigeant:
-                                continue
-
-                            dirigeant_name: Optional[str] = None
-                            for denom_key in ["D\u00e9nomination", "Denomination"]:
+                        def _extract_name_from_bloc(d):
+                            for denom_key in ["Dénomination", "Denomination"]:
                                 if denom_key in d:
-                                    dirigeant_name = d[denom_key]
-                                    break
+                                    return d[denom_key]
+                            for np_key in ["Nom, Prénom(s)", "Nom, Prenom(s)"]:
+                                if np_key in d:
+                                    raw = d[np_key]
+                                    parts_np = [
+                                        p.strip()
+                                        for p in raw.split()
+                                        if p.strip()
+                                    ]
+                                    if len(parts_np) >= 2:
+                                        nom_part = parts_np[0]
+                                        prenom_part = " ".join(parts_np[1:])
+                                        return _format_dirigeant_name(
+                                            nom_part, prenom_part
+                                        )
+                                    elif len(parts_np) == 1:
+                                        return _format_dirigeant_name(
+                                            parts_np[0]
+                                        )
+                            return None
 
-                            if dirigeant_name is None:
-                                for np_key in ["Nom, Pr\u00e9nom(s)", "Nom, Prenom(s)"]:
-                                    if np_key in d:
-                                        raw = d[np_key]
-                                        parts_np = [
-                                            p.strip()
-                                            for p in raw.split()
-                                            if p.strip()
-                                        ]
-                                        if len(parts_np) >= 2:
-                                            # scraped page: "NOM Prenom" -> unified "Prenom Nom"
-                                            nom_part = parts_np[0]
-                                            prenom_part = " ".join(parts_np[1:])
-                                            dirigeant_name = _format_dirigeant_name(
-                                                nom_part, prenom_part
-                                            )
-                                        elif len(parts_np) == 1:
-                                            dirigeant_name = _format_dirigeant_name(
-                                                parts_np[0]
-                                            )
-                                        break
-
-                            if dirigeant_name:
-                                result["PRESIDENT DE LA SOCIETE"] = dirigeant_name
-                                result["FONCTION INPI"] = qualite or ""
+                        found_dirigeant = False
+                        for tier in _priority_tiers:
+                            if found_dirigeant:
                                 break
+                            for d in dirigeants:
+                                qualite = d.get("Qualité", d.get("Qualite", ""))
+                                if "commissaire" in qualite.lower():
+                                    continue
+                                is_match = any(
+                                    q in qualite.lower() for q in tier
+                                )
+                                if not is_match:
+                                    continue
+                                dirigeant_name = _extract_name_from_bloc(d)
+                                if dirigeant_name:
+                                    result["PRESIDENT DE LA SOCIETE"] = dirigeant_name
+                                    result["FONCTION INPI"] = qualite or ""
+                                    found_dirigeant = True
+                                    break
 
             return result if result else None
 
@@ -450,28 +456,53 @@ class INPIClient:
                 except Exception:
                     pass
 
-                # Dirigeant
+                # Dirigeant — prioritize président over other roles
                 try:
                     page.wait_for_selector("h3#representants", timeout=5000)
                     blocs = page.locator(".bloc-dirigeant").all()
                     if blocs:
-                        premier = blocs[0]
-                        paragraphes = premier.locator("p").all()
-                        info: dict[str, str] = {}
-                        for idx in range(0, len(paragraphes), 2):
-                            if idx + 1 < len(paragraphes):
-                                label = paragraphes[idx].text_content().strip()
-                                val = paragraphes[idx + 1].text_content().strip()
-                                info[label] = val
-                        dirigeant = None
-                        if "Denomination" in info or "D\u00e9nomination" in info:
-                            dirigeant = info.get("D\u00e9nomination", info.get("Denomination"))
-                        elif "Nom" in info and "Pr\u00e9nom" in info:
-                            dirigeant = _format_dirigeant_name(info["Nom"], info["Pr\u00e9nom"])
-                        elif "Nom" in info:
-                            dirigeant = _format_dirigeant_name(info["Nom"])
-                        if dirigeant:
-                            result["PRESIDENT DE LA SOCIETE"] = dirigeant
+                        # Parse all blocs first
+                        all_infos = []
+                        for bloc in blocs:
+                            paragraphes = bloc.locator("p").all()
+                            info: dict[str, str] = {}
+                            for idx in range(0, len(paragraphes), 2):
+                                if idx + 1 < len(paragraphes):
+                                    label = paragraphes[idx].text_content().strip()
+                                    val = paragraphes[idx + 1].text_content().strip()
+                                    info[label] = val
+                            all_infos.append(info)
+
+                        # Priority tiers
+                        pw_priority = [
+                            ["president", "président"],
+                            ["gerant", "gérant", "directeur general", "directeur général"],
+                        ]
+                        for tier in pw_priority:
+                            found = False
+                            for info in all_infos:
+                                qualite = info.get("Qualité", info.get("Qualite", ""))
+                                if "commissaire" in qualite.lower():
+                                    continue
+                                if not any(q in qualite.lower() for q in tier):
+                                    continue
+                                dirigeant = None
+                                if "Dénomination" in info or "Denomination" in info:
+                                    dirigeant = info.get("Dénomination", info.get("Denomination"))
+                                elif "Nom, Prénom(s)" in info or "Nom, Prenom(s)" in info:
+                                    raw = info.get("Nom, Prénom(s)", info.get("Nom, Prenom(s)", ""))
+                                    parts_np = raw.split()
+                                    if len(parts_np) >= 2:
+                                        dirigeant = _format_dirigeant_name(parts_np[0], " ".join(parts_np[1:]))
+                                    elif parts_np:
+                                        dirigeant = _format_dirigeant_name(parts_np[0])
+                                if dirigeant:
+                                    result["PRESIDENT DE LA SOCIETE"] = dirigeant
+                                    result["FONCTION INPI"] = qualite or ""
+                                    found = True
+                                    break
+                            if found:
+                                break
                 except Exception:
                     pass
 

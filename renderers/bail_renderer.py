@@ -7,6 +7,7 @@ from pathlib import Path
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
+from docx.shared import Pt
 from lxml import etree
 
 from core.models import ArticleResult
@@ -243,6 +244,8 @@ class BailRenderer:
             paragraph.paragraph_format.left_indent = None
             paragraph.paragraph_format.first_line_indent = None
             paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            # Add spacing before headings
+            paragraph.paragraph_format.space_before = Pt(12)
         else:
             try:
                 paragraph.style = doc.styles["Normal"]
@@ -253,10 +256,18 @@ class BailRenderer:
         for run in paragraph.runs:
             run.text = ""
 
-        # Detect if entire text is a title (ALL CAPS or starts with "ARTICLE")
+        # Detect if entire text is a title (ALL CAPS, starts with "ARTICLE",
+        # or numbered subtitle like "1. Title" or "26.1. – Title")
         is_title_line = (
             clean_text == clean_text.upper() and len(clean_text) > 5
         ) or clean_text.startswith("ARTICLE ")
+        # Numbered subtitle: "1. Text", "2. Text", "26.1. – Text"
+        if not is_title_line and re.match(r"^\d+\.?\s", clean_text):
+            is_title_line = True
+
+        # Add spacing before title/subtitle lines
+        if is_title_line and not heading_level:
+            paragraph.paragraph_format.space_before = Pt(6)
 
         # Parse formatting tags and create runs with template font
         segments = parse_formatting_tags(clean_text)

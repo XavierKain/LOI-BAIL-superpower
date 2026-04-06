@@ -56,6 +56,11 @@ _VARIABLE_ALIASES: dict[str, str] = {
     "Durée du DG": "Durée DG",
     "Duree du DG": "Duree DG",
     "Montant du DG en lettres": "Montant du DG en lettres",
+    # SIRET aliases
+    "Siret Preneur": "N° DE SIRET",
+    "SIRET": "N° DE SIRET",
+    "N° de SIRET": "N° DE SIRET",
+    "Numéro SIRET": "N° DE SIRET",
 }
 
 # Add palier aliases for 1-6 (all variants: with/without "du", capitalization)

@@ -307,6 +307,34 @@ class BailGenerator:
                 break
         return rows
 
+    @staticmethod
+    def _strip_empty_palier_sections(contenu: str, variables: dict) -> str:
+        """Remove palier paragraph blocks for palier years with no data.
+
+        Each palier year is a block separated by \\n\\n. A block belongs to
+        palier N if it references [Montant du palier N] or [Montant du Palier N]
+        or mentions the Nth year ordinal and has no resolved palier value.
+        """
+        blocks = contenu.split("\n\n")
+        filtered = []
+        for block in blocks:
+            # Check if this block references a palier placeholder
+            palier_refs = re.findall(
+                r"\[Montant du [Pp]alier (\d+)(?:\s+en lettres)?\]", block
+            )
+            if palier_refs:
+                # Keep block only if at least one referenced palier has data
+                has_data = False
+                for p_num in palier_refs:
+                    val = _lookup_variable(f"Montant du palier {p_num}", variables)
+                    if val is not None and str(val).strip():
+                        has_data = True
+                        break
+                if not has_data:
+                    continue
+            filtered.append(block)
+        return "\n\n".join(filtered)
+
     def _parse_nom_source_variables(self, nom_source: str, donnees: dict) -> list[str]:
         """Parse Nom Source into individual variable names.
 
@@ -429,6 +457,11 @@ class BailGenerator:
                             textes.append(str(option2))
 
             contenu = "\n\n".join(textes)
+
+            # For Article 26.1 (Paliers): remove paragraph blocks for paliers
+            # that have no data (e.g. palier 3 when only 2 paliers exist)
+            if output_key == "Article 26.1":
+                contenu = self._strip_empty_palier_sections(contenu, variables)
 
             # Replace [Variable] placeholders in the generated text
             for match in re.findall(r"\[([^\]]+)\]", contenu):
