@@ -206,9 +206,7 @@ class BailRenderer:
         for run in paragraph.runs:
             if run.font.name:
                 template_font_name = run.font.name
-            if run.font.size:
                 template_font_size = run.font.size
-            if template_font_name:
                 break
 
         # Fallback: get font from the Normal style
@@ -219,6 +217,10 @@ class BailRenderer:
                 template_font_size = normal_font.size
             except (KeyError, AttributeError):
                 template_font_name = "Calibri"
+        # Default to 11pt if no size found (template inherits from theme)
+        if not template_font_size:
+            from docx.shared import Pt as _Pt
+            template_font_size = _Pt(11)
 
         # Detect heading level
         heading_level = None

@@ -215,15 +215,19 @@ def calculer_variables_derivees(
     # --- Resolve internal formulas (stored as _formula_Name) ---
     _resolve_internal_formulas(variables)
 
-    # --- INPI data ---
+    # --- INPI data (only set non-empty values) ---
     if inpi_data and inpi_data.status == "success":
-        result["NOM DE LA SOCIETE"] = inpi_data.nom_societe
-        result["TYPE DE SOCIETE"] = inpi_data.type_societe
-        result["CAPITAL SOCIAL"] = inpi_data.capital_social
-        result["LOCALITE RCS"] = inpi_data.localite_rcs
-        result["ADRESSE DE DOMICILIATION"] = inpi_data.adresse_domiciliation
-        result["PRESIDENT DE LA SOCIETE"] = inpi_data.president
-        result["FONCTION INPI"] = inpi_data.fonction
+        for key, val in [
+            ("NOM DE LA SOCIETE", inpi_data.nom_societe),
+            ("TYPE DE SOCIETE", inpi_data.type_societe),
+            ("CAPITAL SOCIAL", inpi_data.capital_social),
+            ("LOCALITE RCS", inpi_data.localite_rcs),
+            ("ADRESSE DE DOMICILIATION", inpi_data.adresse_domiciliation),
+            ("PRESIDENT DE LA SOCIETE", inpi_data.president),
+            ("FONCTION INPI", inpi_data.fonction),
+        ]:
+            if val and str(val).strip():
+                result[key] = val
 
     # --- Address: "rue, ville" ---
     rue = _get_var(variables, "Numero et rue", "Numéro et rue")

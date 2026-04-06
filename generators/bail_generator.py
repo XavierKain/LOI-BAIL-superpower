@@ -387,45 +387,46 @@ class BailGenerator:
             textes = []
             manquants = []
 
-            for row in rows:
-                donnee_source = row.get("Donnée source")
-                nom_source_raw = row.get("Nom Source")
-                nom_source = str(nom_source_raw).strip() if pd.notna(nom_source_raw) else ""
-                condition = row.get("Condition")
-                option1 = row.get("Entrée correspondante - Option 1", "")
-                condition2 = row.get("Condition Option 2")
-                option2 = row.get("Entrée correspondante - Option 2", "")
-
-                # Step 1: Check Donnee source / Nom Source lookup (if both present)
-                if pd.notna(donnee_source) and nom_source:
-                    if not self._check_donnee_source_match(
-                        nom_source, donnee_source, article_name, variables
-                    ):
-                        continue  # Skip this row — lookup doesn't match
-
-                # Step 2: Check for conditions suspensives special case
-                if (
-                    "préliminaire" in article_name.lower()
-                    and "Condition" in nom_source
-                    and "suspensive" in nom_source.lower()
-                ):
-                    opt1 = str(option1) if pd.notna(option1) else ""
-                    opt2 = str(option2) if pd.notna(option2) else ""
+            # Special handling: Article préliminaire with conditions suspensives
+            # Process ONCE using the first row's options, not per-row
+            is_cond_suspensive = False
+            if "préliminaire" in article_name.lower() and rows:
+                first_ns = str(rows[0].get("Nom Source", "")).strip() if pd.notna(rows[0].get("Nom Source")) else ""
+                if "Condition" in first_ns and "suspensive" in first_ns.lower():
+                    is_cond_suspensive = True
+                    opt1 = str(rows[0].get("Entrée correspondante - Option 1", "")) if pd.notna(rows[0].get("Entrée correspondante - Option 1")) else ""
+                    opt2 = str(rows[0].get("Entrée correspondante - Option 2", "")) if pd.notna(rows[0].get("Entrée correspondante - Option 2")) else ""
                     texte = generer_conditions_suspensives(variables, opt1, opt2)
                     if texte:
                         textes.append(texte)
-                    continue
 
-                # Step 3: Evaluate Condition -> Option 1
-                if evaluer_condition(condition, variables):
-                    if pd.notna(option1) and str(option1).strip():
-                        textes.append(str(option1))
-                        continue
+            if not is_cond_suspensive:
+                for row in rows:
+                    donnee_source = row.get("Donnée source")
+                    nom_source_raw = row.get("Nom Source")
+                    nom_source = str(nom_source_raw).strip() if pd.notna(nom_source_raw) else ""
+                    condition = row.get("Condition")
+                    option1 = row.get("Entrée correspondante - Option 1", "")
+                    condition2 = row.get("Condition Option 2")
+                    option2 = row.get("Entrée correspondante - Option 2", "")
 
-                # Step 4: Evaluate Condition Option 2 -> Option 2
-                if evaluer_condition(condition2, variables):
-                    if pd.notna(option2) and str(option2).strip():
-                        textes.append(str(option2))
+                    # Step 1: Check Donnee source / Nom Source lookup (if both present)
+                    if pd.notna(donnee_source) and nom_source:
+                        if not self._check_donnee_source_match(
+                            nom_source, donnee_source, article_name, variables
+                        ):
+                            continue
+
+                    # Step 2: Evaluate Condition -> Option 1
+                    if evaluer_condition(condition, variables):
+                        if pd.notna(option1) and str(option1).strip():
+                            textes.append(str(option1))
+                            continue
+
+                    # Step 3: Evaluate Condition Option 2 -> Option 2
+                    if evaluer_condition(condition2, variables):
+                        if pd.notna(option2) and str(option2).strip():
+                            textes.append(str(option2))
 
             contenu = "\n\n".join(textes)
 
