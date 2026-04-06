@@ -56,9 +56,8 @@ def _ensure_source_file(file_content: bytes, file_name: str) -> str:
     return str(tmp_path)
 
 
-@st.cache_data(show_spinner=False)
-def _parse_excel(file_content: bytes, file_name: str, config_path: str, cache_key: str, version: str = "v9"):
-    """Parse Excel file with cache invalidation via version param."""
+def _parse_excel(file_content: bytes, file_name: str, config_path: str):
+    """Parse Excel file. No caching to avoid stale data issues."""
     source_path = _ensure_source_file(file_content, file_name)
     parser = ExcelParser(source_path, config_path)
     variables = parser.extract_variables()
@@ -105,11 +104,10 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
         st.success(f"✅ Fichier chargé: {uploaded_file.name}")
 
         file_content = uploaded_file.getbuffer().tobytes()
-        cache_key = f"{uploaded_file.name}_{datetime.now().strftime('%Y-%m-%d')}"
 
         with st.spinner("Extraction des données et enrichissement INPI..."):
             variables, societes, inpi_data, source_path, output_name_loi, output_name_bail, cond_mapping = _parse_excel(
-                file_content, uploaded_file.name, str(CONFIG_LOI), cache_key, version="v9",
+                file_content, uploaded_file.name, str(CONFIG_LOI),
             )
 
         # Ensure source file exists on disk (may have been lost between reruns)
@@ -248,11 +246,12 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
             if st.button("🚀 Générer LOI", type="primary", use_container_width=True, key="btn_gen_loi"):
                 try:
                     with st.spinner("⏳ Génération en cours..."):
+                        source_path_loi = _ensure_source_file(file_content, uploaded_file.name)
                         dossier = DossierData(
                             variables=variables,
                             variables_derivees=variables_derivees,
                             inpi_data=inpi_data,
-                            source_file=Path(source_path),
+                            source_file=Path(source_path_loi),
                         )
                         generator = LOIGenerator(dossier, conditions_mapping=cond_mapping)
                         renderer = LOIRenderer(str(TEMPLATE_LOI))
@@ -290,15 +289,18 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
             if st.button("🚀 Générer BAIL", type="primary", use_container_width=True, key="btn_gen_bail"):
                 try:
                     with st.spinner("⏳ Génération en cours..."):
+                        # Ensure source file is on disk
+                        source_path_bail = _ensure_source_file(file_content, uploaded_file.name)
+
                         # Use source file's Rédaction BAIL sheet if available
                         import openpyxl as _opx
-                        _wb_check = _opx.load_workbook(source_path, read_only=True)
+                        _wb_check = _opx.load_workbook(source_path_bail, read_only=True)
                         _has_bail = any("bail" in s.lower() and ("redaction" in s.lower().replace("é","e")) for s in _wb_check.sheetnames)
                         _wb_check.close()
-                        bail_config = source_path if _has_bail else str(CONFIG_BAIL)
+                        bail_config = source_path_bail if _has_bail else str(CONFIG_BAIL)
 
                         bail_gen = BailGenerator(
-                            bail_config, source_workbook_path=source_path
+                            bail_config, source_workbook_path=source_path_bail
                         )
                         articles = bail_gen.generer_bail(all_vars)
 
