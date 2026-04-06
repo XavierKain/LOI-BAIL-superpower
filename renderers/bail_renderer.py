@@ -200,6 +200,26 @@ class BailRenderer:
 
     def _render_paragraph_content(self, paragraph, text: str, doc):
         """Render text with heading markers and formatting tags into a paragraph."""
+        # Capture the template font from existing runs before clearing
+        template_font_name = None
+        template_font_size = None
+        for run in paragraph.runs:
+            if run.font.name:
+                template_font_name = run.font.name
+            if run.font.size:
+                template_font_size = run.font.size
+            if template_font_name:
+                break
+
+        # Fallback: get font from the Normal style
+        if not template_font_name:
+            try:
+                normal_font = doc.styles["Normal"].font
+                template_font_name = normal_font.name or "Calibri"
+                template_font_size = normal_font.size
+            except (KeyError, AttributeError):
+                template_font_name = "Calibri"
+
         # Detect heading level
         heading_level = None
         clean_text = text
@@ -231,12 +251,17 @@ class BailRenderer:
         for run in paragraph.runs:
             run.text = ""
 
-        # Parse formatting tags and create runs
+        # Parse formatting tags and create runs with template font
         segments = parse_formatting_tags(clean_text)
         for seg_text, formatting in segments:
             if not seg_text:
                 continue
             run = paragraph.add_run(seg_text)
+            # Apply template font (preserve Calibri from template)
+            if not heading_level:
+                run.font.name = template_font_name
+                if template_font_size:
+                    run.font.size = template_font_size
             if formatting.get("bold"):
                 run.font.bold = True
             if formatting.get("italic"):

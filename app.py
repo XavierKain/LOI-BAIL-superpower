@@ -101,14 +101,24 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
         return
 
     try:
-        st.success(f"✅ Fichier chargé: {uploaded_file.name}")
-
         file_content = uploaded_file.getbuffer().tobytes()
+        file_hash = hashlib.sha256(file_content).hexdigest()[:12]
 
-        with st.spinner("Extraction des données et enrichissement INPI..."):
-            variables, societes, inpi_data, source_path, output_name_loi, output_name_bail, cond_mapping = _parse_excel(
-                file_content, uploaded_file.name, str(CONFIG_LOI),
-            )
+        # Only parse once per file — store in session state
+        if st.session_state.get("_parsed_hash") != file_hash:
+            with st.spinner("Extraction des données et enrichissement INPI..."):
+                variables, societes, inpi_data, source_path, output_name_loi, output_name_bail, cond_mapping = _parse_excel(
+                    file_content, uploaded_file.name, str(CONFIG_LOI),
+                )
+                st.session_state["_parsed_hash"] = file_hash
+                st.session_state["_parsed_data"] = (variables, societes, inpi_data, source_path, output_name_loi, output_name_bail, cond_mapping)
+                st.session_state["_file_content"] = file_content
+                st.session_state["_file_name"] = uploaded_file.name
+
+        variables, societes, inpi_data, source_path, output_name_loi, output_name_bail, cond_mapping = st.session_state["_parsed_data"]
+        file_content = st.session_state["_file_content"]
+
+        st.success(f"✅ Fichier chargé: {uploaded_file.name}")
 
         # Ensure source file exists on disk (may have been lost between reruns)
         source_path = _ensure_source_file(file_content, uploaded_file.name)
