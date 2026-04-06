@@ -288,10 +288,12 @@ class BailGenerator:
             desig = row.get("Désignation") or row.get("Designation")
 
             if pd.notna(art) and str(art).strip() == article_name:
-                # If designation filter is set, check it
                 if designation:
                     desig_str = str(desig).strip() if pd.notna(desig) else ""
                     if desig_str != designation:
+                        if found:
+                            # We were in our section, hit a different designation -> stop
+                            break
                         continue
                 found = True
                 rows.append(row)
