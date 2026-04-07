@@ -84,24 +84,40 @@ def _strip_accents(text: str) -> str:
 
 
 def _auto_bold_amounts(text: str) -> str:
-    """Wrap monetary amounts with <b> tags for bold rendering.
+    """Wrap key elements with <b> tags for bold rendering in BAIL articles.
 
-    Matches patterns like:
-    - 140 000 € HT HC (CENT QUARANTE MILLE EUROS HORS TAXES ET HORS CHARGES)
-    - 30 000 € HT (TRENTE MILLE EUROS HORS TAXES)
-    - 15 000 € HT
-    - 40 000 € (QUARANTE MILLE EUROS).
-    Skips amounts already inside <b> tags.
+    Patterns covered (matches reference PDF formatting):
+    1. Monetary amounts: "50.000 € HT HC (CINQUANTE MILLE EUROS HORS TAXES)"
+    2. Durations with letters: "10 (DIX) années", "6 (SIX) mois", "3 (TROIS) ans"
+    3. Dates: "17/02/2025"
+    Skips elements already inside <b> tags.
     """
-    # Pattern: number with spaces + € + optional suffix + optional (LETTRES)
-    pattern = re.compile(
+    # Pattern 1: monetary amounts (supports both space and dot as thousand separator)
+    money_pattern = re.compile(
         r'(?<!<b>)'  # not already bolded
-        r'([\d][\d\s\xa0]*\s*€'  # number + €
-        r'(?:\s*(?:HT|HC|TTC|HORS TAXES|HORS CHARGES|ET HORS (?:TAXES|CHARGES)))*'  # optional HT/HC/TTC
-        r'(?:\s*\([A-ZÀ-Ü\s\'-]+\))?'  # optional (EN LETTRES)
+        r'([\d][\d\s\xa0.]*\s*€'  # number (with spaces or dots) + €
+        r'(?:\s*(?:HT|HC|TTC|HORS TAXES|HORS CHARGES|ET HORS (?:TAXES|CHARGES)))*'
+        r'(?:\s*\([A-ZÀ-Ü\s\'\u2019\-]+\))?'  # optional (EN LETTRES)
         r'\.?)'  # optional trailing period
     )
-    return pattern.sub(r'<b>\1</b>', text)
+    text = money_pattern.sub(r'<b>\1</b>', text)
+
+    # Pattern 2: durations like "10 (DIX) années", "6 (SIX) mois", "3 (TROIS) ans"
+    duration_pattern = re.compile(
+        r'(?<!<b>)'
+        r'(\d+\s*\([A-ZÀ-Ü\-]+\)\s+'
+        r'(?:années?|année|mois|ans|jours?|trimestres?|semaines?|pleines?|entières?))'
+    )
+    text = duration_pattern.sub(r'<b>\1</b>', text)
+
+    # Pattern 3: dates in DD/MM/YYYY format
+    date_pattern = re.compile(
+        r'(?<!<b>)'
+        r'(\d{1,2}/\d{1,2}/\d{4})'
+    )
+    text = date_pattern.sub(r'<b>\1</b>', text)
+
+    return text
 
 
 def _lookup_variable(name: str, donnees: dict) -> Any:
