@@ -116,7 +116,10 @@ class BailRenderer:
         # Phase 4: Fix heading indentation
         self._fix_heading_indentation(doc)
 
-        # Phase 5: Mark TOC dirty
+        # Phase 5: Remove trailing empty paragraphs that create blank pages
+        self._remove_trailing_empty_paragraphs(doc)
+
+        # Phase 6: Mark TOC dirty
         self._update_toc(doc)
 
         doc.save(output_path)
@@ -305,6 +308,36 @@ class BailRenderer:
             if text and re.match(r"^(\{\{[^}]*\}\}\s*)+$", text):
                 to_remove.append(p)
         self.engine.delete_paragraphs(to_remove)
+
+    def _remove_trailing_empty_paragraphs(self, doc):
+        """Remove empty paragraphs at the end of the document body.
+
+        Word often leaves multiple empty paragraphs after replaced placeholders
+        which can spill over to a blank page. Keep only one trailing paragraph
+        (Word requires at least one paragraph in a section).
+        """
+        body = doc.element.body
+        from docx.oxml.ns import qn as _qn
+        w_p = _qn("w:p")
+        w_pPr = _qn("w:pPr")
+        w_sectPr = _qn("w:sectPr")
+        w_t = _qn("w:t")
+        w_drawing = _qn("w:drawing")
+        paragraphs = body.findall(w_p)
+        kept_one = False
+        for p in reversed(paragraphs):
+            # Skip if this paragraph carries a section break (must keep)
+            pPr = p.find(w_pPr)
+            if pPr is not None and pPr.find(w_sectPr) is not None:
+                continue
+            text = "".join(t.text or "" for t in p.findall(".//" + w_t))
+            has_image = p.find(".//" + w_drawing) is not None
+            if text.strip() or has_image:
+                break  # Reached a non-empty paragraph, stop
+            if not kept_one:
+                kept_one = True  # Keep one trailing empty paragraph
+                continue
+            p.getparent().remove(p)
 
     def _fix_heading_indentation(self, doc):
         """Reset indentation for all heading paragraphs."""

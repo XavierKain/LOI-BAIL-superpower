@@ -361,70 +361,6 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
                         )
                         articles = bail_gen.generer_bail(all_vars)
 
-                    ok_count = sum(1 for a in articles if a.contenu.strip())
-                    st.success(f"✅ {ok_count}/{len(articles)} articles générés avec contenu")
-
-                    # Show key BAIL variables for debugging
-                    with st.expander("🔍 Variables BAIL clés", expanded=False):
-                        bail_keys = [
-                            "Société Bailleur", "Type Preneur", "Nom Preneur",
-                            "N° DE SIRET", "NOM DE LA SOCIETE", "TYPE DE SOCIETE",
-                            "CAPITAL SOCIAL", "LOCALITE RCS", "ADRESSE DE DOMICILIATION",
-                            "PRESIDENT DE LA SOCIETE", "FONCTION INPI",
-                            "Durée Bail", "Durée ferme Bail", "Date de prise d'effet",
-                            "Montant du loyer",
-                        ]
-                        # Dynamically add Loyer année / palier for all existing years
-                        for _pi in range(1, 7):
-                            ly = all_vars.get(f"Loyer année {_pi}", "")
-                            mp = all_vars.get(f"Montant du palier {_pi}", "")
-                            if ly or mp:
-                                bail_keys.append(f"Loyer année {_pi}")
-                                bail_keys.append(f"Montant du palier {_pi}")
-                        bail_keys.extend([
-                            "Periode paliers",
-                            "Actualisation", "Paiement", "Accession",
-                            "Droit d'entrée", "Durée DG", "Montant du DG",
-                            "Durée Franchise", "Honoraires Preneur", "DPE",
-                            "Destination", "Enseigne", "Restauration sans extraction",
-                            "Condition suspensive 1", "Condition suspensive 2",
-                            "Condition suspensive 3", "Condition suspensive 4",
-                            "Adresse Locaux Loues", "Numero et rue",
-                            "Ville ou arrondissement", "Surface totale", "Surface RDC",
-                            "Taxe foncière", "Charges Copro", "Participation Travaux",
-                            "Date de signature",
-                        ])
-                        # Deduplicate while preserving order
-                        _seen_bk = set()
-                        bail_keys_dedup = []
-                        for bk in bail_keys:
-                            if bk not in _seen_bk:
-                                _seen_bk.add(bk)
-                                bail_keys_dedup.append(bk)
-                        for bk in bail_keys_dedup:
-                            val = all_vars.get(bk, "")
-                            icon = "✅" if val else "⚠️"
-                            st.markdown(f"{icon} **{bk}** = {val if val else '*vide*'}")
-
-                    # Show article details
-                    with st.expander("📝 Détail des articles générés", expanded=True):
-                        for art in articles:
-                            has_content = bool(art.contenu.strip())
-                            icon = "✅" if has_content else "⚠️"
-                            c1, c2, c3 = st.columns([3, 5, 1])
-                            with c1:
-                                st.markdown(f"**{art.designation}**")
-                            with c2:
-                                if has_content:
-                                    preview = art.contenu[:80].replace("\n", " ")
-                                    st.text(preview + ("..." if len(art.contenu) > 80 else ""))
-                                else:
-                                    st.markdown("*Pas de contenu (conditions non remplies)*")
-                            with c3:
-                                st.markdown(icon)
-                            if art.placeholders_manquants:
-                                st.caption(f"  Placeholders manquants: {', '.join(art.placeholders_manquants[:5])}")
-
                     with st.spinner("⏳ Finalisation du document Word..."):
                         renderer = BailRenderer(str(TEMPLATE_BAIL))
                         output_path = OUTPUT_DIR / output_name_bail
@@ -433,16 +369,92 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
 
                     st.success("✅ Document BAIL généré avec succès!")
 
-                    # Persist file bytes in session state so the download button
-                    # remains visible after the user clicks it (Streamlit reruns).
+                    # Persist everything in session_state so the displays
+                    # remain visible after the user clicks the download button
+                    # (Streamlit reruns the script on every interaction).
                     with open(output_path, "rb") as f:
                         st.session_state["bail_bytes"] = f.read()
                     st.session_state["bail_filename"] = output_name_bail
+                    # Convert articles to plain dicts so they survive in session state
+                    st.session_state["bail_articles"] = [
+                        {
+                            "designation": a.designation,
+                            "contenu": a.contenu,
+                            "placeholders_manquants": list(a.placeholders_manquants),
+                        }
+                        for a in articles
+                    ]
+                    st.session_state["bail_all_vars"] = dict(all_vars)
 
                 except Exception as e:
                     st.error(f"❌ Erreur lors de la génération BAIL: {str(e)}")
                     with st.expander("Détails de l'erreur"):
                         st.code(traceback.format_exc())
+
+            # ----- Persistent display of generated BAIL data -----
+            # Rendered OUTSIDE the button block so it survives reruns triggered
+            # by clicking the download button.
+            if st.session_state.get("bail_articles"):
+                _articles = st.session_state["bail_articles"]
+                _all_vars = st.session_state.get("bail_all_vars", {})
+                _ok_count = sum(1 for a in _articles if a["contenu"].strip())
+                st.info(f"📊 {_ok_count}/{len(_articles)} articles générés avec contenu")
+
+                # Show key BAIL variables for debugging
+                with st.expander("🔍 Variables BAIL clés", expanded=False):
+                    bail_keys = [
+                        "Société Bailleur", "Type Preneur", "Nom Preneur",
+                        "N° DE SIRET", "NOM DE LA SOCIETE", "TYPE DE SOCIETE",
+                        "CAPITAL SOCIAL", "LOCALITE RCS", "ADRESSE DE DOMICILIATION",
+                        "PRESIDENT DE LA SOCIETE", "FONCTION INPI",
+                        "Durée Bail", "Durée ferme Bail", "Date de prise d'effet",
+                        "Montant du loyer",
+                    ]
+                    for _pi in range(1, 7):
+                        ly = _all_vars.get(f"Loyer année {_pi}", "")
+                        mp = _all_vars.get(f"Montant du palier {_pi}", "")
+                        if ly or mp:
+                            bail_keys.append(f"Loyer année {_pi}")
+                            bail_keys.append(f"Montant du palier {_pi}")
+                    bail_keys.extend([
+                        "Periode paliers",
+                        "Actualisation", "Paiement", "Accession",
+                        "Droit d'entrée", "Durée DG", "Montant du DG",
+                        "Durée Franchise", "Honoraires Preneur", "DPE",
+                        "Destination", "Enseigne", "Restauration sans extraction",
+                        "Condition suspensive 1", "Condition suspensive 2",
+                        "Condition suspensive 3", "Condition suspensive 4",
+                        "Adresse Locaux Loues", "Numero et rue",
+                        "Ville ou arrondissement", "Surface totale", "Surface RDC",
+                        "Taxe foncière", "Charges Copro", "Participation Travaux",
+                        "Date de signature",
+                    ])
+                    _seen_bk = set()
+                    for bk in bail_keys:
+                        if bk in _seen_bk:
+                            continue
+                        _seen_bk.add(bk)
+                        val = _all_vars.get(bk, "")
+                        icon = "✅" if val else "⚠️"
+                        st.markdown(f"{icon} **{bk}** = {val if val else '*vide*'}")
+
+                with st.expander("📝 Détail des articles générés", expanded=True):
+                    for art in _articles:
+                        has_content = bool(art["contenu"].strip())
+                        icon = "✅" if has_content else "⚠️"
+                        c1, c2, c3 = st.columns([3, 5, 1])
+                        with c1:
+                            st.markdown(f"**{art['designation']}**")
+                        with c2:
+                            if has_content:
+                                preview = art["contenu"][:80].replace("\n", " ")
+                                st.text(preview + ("..." if len(art["contenu"]) > 80 else ""))
+                            else:
+                                st.markdown("*Pas de contenu (conditions non remplies)*")
+                        with c3:
+                            st.markdown(icon)
+                        if art["placeholders_manquants"]:
+                            st.caption(f"  Placeholders manquants: {', '.join(art['placeholders_manquants'][:5])}")
 
             # Download button (persists across reruns via session_state)
             if st.session_state.get("bail_bytes"):

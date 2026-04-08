@@ -250,14 +250,15 @@ def generer_conditions_suspensives(
         return option1_text
 
     # Multiple conditions: use option2_text with letter replacement
-    # Letters a./b./c./d. are wrapped in <b> tags so they render as bold
+    # The entire item (letter + text) is wrapped in <b> tags so the whole
+    # condition text renders bold.
     lettres = ["a", "b", "c", "d"]
     conditions_text = []
     for idx, (key, value) in enumerate(conditions):
         if idx < len(lettres):
             lettre = lettres[idx]
             texte = _TEXTES_CONDITIONS.get(value, f"[Condition: {value}]")
-            conditions_text.append(f"<b>{lettre}.</b> {texte}")
+            conditions_text.append(f"<b>{lettre}. {texte}</b>")
 
     replacement_lines = "\n\n".join(conditions_text)
     replacement = f"suivantes :\n\n{replacement_lines}\n\nCi-après"

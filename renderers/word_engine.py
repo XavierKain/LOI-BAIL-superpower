@@ -35,24 +35,31 @@ class WordEngine:
             if val is not None:
                 setattr(target.font, attr, val)
 
-        # Copy full w:rFonts (ascii/hAnsi/cs/eastAsia) from source XML to
-        # prevent fallback to Times New Roman for non-ASCII characters or in
-        # paragraphs where the heading style overrides the ascii font.
+        # Force Calibri on all 4 rFonts attributes (ascii/hAnsi/cs/eastAsia).
+        # Copy from source first if available; otherwise default to Calibri.
+        # This prevents Times New Roman fallback for non-ASCII characters
+        # (accents) and runs whose source had no explicit rFonts.
         try:
             from docx.oxml.ns import qn as _qn
+            from lxml import etree as _et
+            font_name = source.font.name or "Calibri"
             src_rpr = source._element.find(_qn("w:rPr"))
+            src_rfonts = None
             if src_rpr is not None:
                 src_rfonts = src_rpr.find(_qn("w:rFonts"))
+
+            tgt_rpr = target._element.get_or_add_rPr()
+            tgt_rfonts = tgt_rpr.find(_qn("w:rFonts"))
+            if tgt_rfonts is None:
+                tgt_rfonts = _et.SubElement(tgt_rpr, _qn("w:rFonts"))
+
+            for attr in ("ascii", "hAnsi", "cs", "eastAsia"):
+                val = None
                 if src_rfonts is not None:
-                    tgt_rpr = target._element.get_or_add_rPr()
-                    tgt_rfonts = tgt_rpr.find(_qn("w:rFonts"))
-                    if tgt_rfonts is None:
-                        from lxml import etree as _et
-                        tgt_rfonts = _et.SubElement(tgt_rpr, _qn("w:rFonts"))
-                    for attr in ("ascii", "hAnsi", "cs", "eastAsia"):
-                        val = src_rfonts.get(_qn(f"w:{attr}"))
-                        if val:
-                            tgt_rfonts.set(_qn(f"w:{attr}"), val)
+                    val = src_rfonts.get(_qn(f"w:{attr}"))
+                if not val:
+                    val = font_name
+                tgt_rfonts.set(_qn(f"w:{attr}"), val)
         except Exception:
             pass
 
@@ -65,6 +72,26 @@ class WordEngine:
                     target.font.color.rgb = source.font.color.rgb
             except (AttributeError, TypeError):
                 pass
+
+    @staticmethod
+    def _force_calibri_rfonts(run, font_name: str = "Calibri"):
+        """Force the run's rFonts to font_name on all 4 attributes.
+
+        Prevents Times New Roman fallback for non-ASCII characters when the
+        run's existing font is implicit (theme-inherited).
+        """
+        try:
+            from docx.oxml.ns import qn as _qn
+            from lxml import etree as _et
+            rpr = run._element.get_or_add_rPr()
+            rfonts = rpr.find(_qn("w:rFonts"))
+            if rfonts is None:
+                rfonts = _et.SubElement(rpr, _qn("w:rFonts"))
+            for attr in ("ascii", "hAnsi", "cs", "eastAsia"):
+                if not rfonts.get(_qn(f"w:{attr}")):
+                    rfonts.set(_qn(f"w:{attr}"), font_name)
+        except Exception:
+            pass
 
     def is_paragraph_optional(self, paragraph) -> bool:
         """Check if a paragraph is optional (has blue-colored text).
@@ -210,6 +237,9 @@ class WordEngine:
                     placeholder = f"[{name}]"
                     if placeholder in run.text:
                         run.text = run.text.replace(placeholder, value if value is not None else "")
+                        # Force Calibri rFonts on this run so the replacement
+                        # text doesn't fall back to Times New Roman
+                        self._force_calibri_rfonts(run)
             return None
 
         # Complex path: char-map reconstruction
