@@ -245,6 +245,19 @@ def calculer_variables_derivees(
             if val and str(val).strip():
                 result[key] = val
 
+    # --- Type Preneur normalization ---
+    # If Type Preneur is not one of the recognized values (SAS/SARL/EURL/
+    # Société en formation/Personne Physique), default to "SAS".
+    # Reason: a numeric/unknown value (e.g. legal form code) used to silently
+    # match the first row in BAIL rules (Personne Physique) which is wrong for
+    # most companies.
+    type_preneur_raw = _get_var(variables, "Type Preneur")
+    if type_preneur_raw:
+        recognized = {"sas", "sarl", "eurl", "société en formation", "societe en formation",
+                      "personne physique"}
+        if type_preneur_raw.strip().lower() not in recognized:
+            result["Type Preneur"] = "SAS"
+
     # --- Address: "rue, ville" ---
     rue = _get_var(variables, "Numero et rue", "Numéro et rue")
     ville = _get_var(variables, "Ville ou arrondissement")

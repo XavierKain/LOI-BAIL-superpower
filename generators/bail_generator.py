@@ -513,7 +513,26 @@ class BailGenerator:
                 contenu = self._strip_empty_palier_sections(contenu, variables)
 
             # Replace [Variable] placeholders in the generated text
+            from core.number_to_french import number_to_french_words
             for match in re.findall(r"\[([^\]]+)\]", contenu):
+                # Handle "en lettres" suffix: convert numeric value to French words
+                if match.endswith(" en lettres"):
+                    base_name = match[:-len(" en lettres")]
+                    base_value = _lookup_variable(base_name, variables)
+                    if base_value is not None and str(base_value).strip():
+                        try:
+                            num = float(
+                                str(base_value).replace(" ", "").replace(",", ".")
+                                .replace("\u00a0", "")
+                            )
+                            words = number_to_french_words(num)
+                            contenu = contenu.replace(f"[{match}]", words)
+                            continue
+                        except (ValueError, TypeError):
+                            pass
+                    manquants.append(match)
+                    continue
+
                 value = _lookup_variable(match, variables)
                 if value is not None and str(value).strip():
                     try:

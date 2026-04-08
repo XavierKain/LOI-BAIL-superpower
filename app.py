@@ -193,22 +193,48 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
 
         # All variables expander — deduplicated
         with st.expander("📋 Voir toutes les variables extraites", expanded=False):
-            # Deduplicate: keep only one version per accent-insensitive key
+            # Deduplicate aggressively: collapse alias/casing/accent variants
+            # AND collapse "stop word" variants (e.g. "Durée Bail"/"Durée du Bail",
+            # "Date prise d'effet"/"Date de prise d'effet"/"Date de prise d'effet du bail")
             import unicodedata
             def _strip_acc(s):
                 return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
-            seen_keys = set()
-            display_vars = {}
+            _STOPWORDS = {"de", "du", "des", "le", "la", "les", "l", "d", "bail", "preneur"}
+
+            def _canonical(name: str) -> str:
+                """Aggressive normalization for dedup: lowercase, strip accents,
+                remove stopwords, collapse spaces."""
+                s = _strip_acc(name.lower())
+                # Replace non-alphanumeric (except space and digit) with space
+                import re as _re
+                s = _re.sub(r"[^a-z0-9 ]+", " ", s)
+                tokens = [t for t in s.split() if t and t not in _STOPWORDS]
+                return " ".join(tokens)
+
+            # Group variables by canonical key, prefer the version with a value
+            groups: dict[str, tuple[str, str]] = {}
             for k, v in all_vars.items():
                 if k.startswith("_"):
                     continue
-                norm = _strip_acc(k.lower())
-                if norm in seen_keys:
+                canon = _canonical(k)
+                if not canon:
                     continue
-                seen_keys.add(norm)
+                v_str = str(v).strip() if v else ""
+                if canon in groups:
+                    # Keep the one with a value (or the shorter name if both empty/equal)
+                    existing_k, existing_v = groups[canon]
+                    if v_str and not existing_v:
+                        groups[canon] = (k, v_str)
+                    elif v_str and existing_v and len(k) < len(existing_k):
+                        groups[canon] = (k, v_str)
+                else:
+                    groups[canon] = (k, v_str)
+
+            display_vars = {}
+            for canon, (k, v_str) in groups.items():
                 # Format numbers nicely for display
-                display_val = str(v) if v else ""
+                display_val = v_str
                 if display_val and display_val.replace(".", "").replace("-", "").isdigit():
                     try:
                         num = float(display_val)

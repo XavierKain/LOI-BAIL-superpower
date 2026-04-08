@@ -165,6 +165,8 @@ class BailRenderer:
         all_parts = []
         for line in content.split("\n"):
             stripped = line.strip()
+            # Collapse multiple consecutive spaces to one (preserves \xa0)
+            stripped = re.sub(r" {2,}", " ", stripped)
             all_parts.append(stripped)  # keep empty strings for spacing
 
         if not all_parts:
@@ -218,14 +220,15 @@ class BailRenderer:
             from docx.shared import Pt as _Pt
             template_font_size = _Pt(11)
 
-        # Detect heading level
+        # Detect heading level (strip markers)
+        # Only ** (level 2) gets a Word Heading style.
+        # *** and **** are just bold paragraphs at body size (matches reference PDF
+        # where subtitles like "7.3.2. – Prélèvements" are body size + bold).
         heading_level = None
         clean_text = text
         if text.startswith("****"):
-            heading_level = 4
             clean_text = text[4:].lstrip()
         elif text.startswith("***"):
-            heading_level = 3
             clean_text = text[3:].lstrip()
         elif text.startswith("**"):
             heading_level = 2
@@ -239,7 +242,6 @@ class BailRenderer:
             paragraph.paragraph_format.left_indent = None
             paragraph.paragraph_format.first_line_indent = None
             paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            # Add spacing before headings
             paragraph.paragraph_format.space_before = Pt(12)
         else:
             try:
@@ -272,11 +274,22 @@ class BailRenderer:
             if not seg_text:
                 continue
             run = paragraph.add_run(seg_text)
-            # Apply template font (preserve Calibri from template)
-            if not heading_level:
-                run.font.name = template_font_name
-                if template_font_size:
-                    run.font.size = template_font_size
+            # Force Calibri font on ALL runs, including headings
+            # (default heading styles inherit Times New Roman from theme)
+            run.font.name = template_font_name
+            # Also set East Asian font name to prevent fallback
+            from docx.oxml.ns import qn as _qn
+            rpr = run._element.get_or_add_rPr()
+            rfonts = rpr.find(_qn("w:rFonts"))
+            if rfonts is None:
+                from lxml import etree as _et
+                rfonts = _et.SubElement(rpr, _qn("w:rFonts"))
+            rfonts.set(_qn("w:ascii"), template_font_name)
+            rfonts.set(_qn("w:hAnsi"), template_font_name)
+            rfonts.set(_qn("w:cs"), template_font_name)
+            rfonts.set(_qn("w:eastAsia"), template_font_name)
+            if template_font_size:
+                run.font.size = template_font_size
             if formatting.get("bold") or is_major_title or is_subtitle:
                 run.font.bold = True
             if formatting.get("italic"):
