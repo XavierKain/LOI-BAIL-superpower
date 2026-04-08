@@ -161,11 +161,23 @@ def est_societe(type_preneur: str) -> bool:
 
 
 def _get_var(variables: dict, *keys: str) -> str:
-    """Get a variable value trying multiple key names (accent variants)."""
+    """Get a variable value trying multiple key names (case/accent insensitive)."""
+    import unicodedata as _ud
+    def _norm(s):
+        return "".join(c for c in _ud.normalize("NFKD", str(s).lower()) if not _ud.combining(c))
+    # Build a normalized lookup map once
+    norm_map = {_norm(k): k for k in variables}
     for key in keys:
+        # Exact match first
         val = variables.get(key, "")
         if val and str(val).strip():
             return str(val).strip()
+        # Case/accent-insensitive fallback
+        actual_key = norm_map.get(_norm(key))
+        if actual_key:
+            val = variables.get(actual_key, "")
+            if val and str(val).strip():
+                return str(val).strip()
     return ""
 
 

@@ -35,6 +35,27 @@ class WordEngine:
             if val is not None:
                 setattr(target.font, attr, val)
 
+        # Copy full w:rFonts (ascii/hAnsi/cs/eastAsia) from source XML to
+        # prevent fallback to Times New Roman for non-ASCII characters or in
+        # paragraphs where the heading style overrides the ascii font.
+        try:
+            from docx.oxml.ns import qn as _qn
+            src_rpr = source._element.find(_qn("w:rPr"))
+            if src_rpr is not None:
+                src_rfonts = src_rpr.find(_qn("w:rFonts"))
+                if src_rfonts is not None:
+                    tgt_rpr = target._element.get_or_add_rPr()
+                    tgt_rfonts = tgt_rpr.find(_qn("w:rFonts"))
+                    if tgt_rfonts is None:
+                        from lxml import etree as _et
+                        tgt_rfonts = _et.SubElement(tgt_rpr, _qn("w:rFonts"))
+                    for attr in ("ascii", "hAnsi", "cs", "eastAsia"):
+                        val = src_rfonts.get(_qn(f"w:{attr}"))
+                        if val:
+                            tgt_rfonts.set(_qn(f"w:{attr}"), val)
+        except Exception:
+            pass
+
         if override_color is not None:
             target.font.color.rgb = override_color
         else:

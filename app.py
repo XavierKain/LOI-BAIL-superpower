@@ -200,7 +200,13 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
             def _strip_acc(s):
                 return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
-            _STOPWORDS = {"de", "du", "des", "le", "la", "les", "l", "d", "bail", "preneur"}
+            _STOPWORDS = {"de", "du", "des", "le", "la", "les", "l", "d",
+                          "bail", "preneur", "n", "no", "numero", "num"}
+            # Aliases that should fold into a canonical token
+            _ALIASES = {
+                "siret": "siret",
+                "rcs": "rcs",
+            }
 
             def _canonical(name: str) -> str:
                 """Aggressive normalization for dedup: lowercase, strip accents,
@@ -210,6 +216,8 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
                 import re as _re
                 s = _re.sub(r"[^a-z0-9 ]+", " ", s)
                 tokens = [t for t in s.split() if t and t not in _STOPWORDS]
+                # Apply aliases
+                tokens = [_ALIASES.get(t, t) for t in tokens]
                 return " ".join(tokens)
 
             # Group variables by canonical key, prefer the version with a value
@@ -304,21 +312,28 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
 
                     st.success("✅ Document LOI généré avec succès!")
 
+                    # Persist file bytes in session state so the download button
+                    # remains visible after the user clicks it (Streamlit reruns).
                     with open(output_path, "rb") as f:
-                        st.download_button(
-                            "📥 Télécharger le document LOI",
-                            f.read(),
-                            file_name=output_name_loi,
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                            use_container_width=True,
-                            key="download_loi",
-                            type="primary",
-                        )
+                        st.session_state["loi_bytes"] = f.read()
+                    st.session_state["loi_filename"] = output_name_loi
 
                 except Exception as e:
                     st.error(f"❌ Erreur lors de la génération LOI: {str(e)}")
                     with st.expander("Détails de l'erreur"):
                         st.code(traceback.format_exc())
+
+            # Download button (persists across reruns via session_state)
+            if st.session_state.get("loi_bytes"):
+                st.download_button(
+                    "📥 Télécharger le document LOI",
+                    st.session_state["loi_bytes"],
+                    file_name=st.session_state.get("loi_filename", "loi.docx"),
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True,
+                    key="download_loi",
+                    type="primary",
+                )
 
         # BAIL
         with col_bail:
@@ -418,21 +433,28 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
 
                     st.success("✅ Document BAIL généré avec succès!")
 
+                    # Persist file bytes in session state so the download button
+                    # remains visible after the user clicks it (Streamlit reruns).
                     with open(output_path, "rb") as f:
-                        st.download_button(
-                            "📥 Télécharger le document BAIL",
-                            f.read(),
-                            file_name=output_name_bail,
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                            use_container_width=True,
-                            key="download_bail",
-                            type="primary",
-                        )
+                        st.session_state["bail_bytes"] = f.read()
+                    st.session_state["bail_filename"] = output_name_bail
 
                 except Exception as e:
                     st.error(f"❌ Erreur lors de la génération BAIL: {str(e)}")
                     with st.expander("Détails de l'erreur"):
                         st.code(traceback.format_exc())
+
+            # Download button (persists across reruns via session_state)
+            if st.session_state.get("bail_bytes"):
+                st.download_button(
+                    "📥 Télécharger le document BAIL",
+                    st.session_state["bail_bytes"],
+                    file_name=st.session_state.get("bail_filename", "bail.docx"),
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True,
+                    key="download_bail",
+                    type="primary",
+                )
 
     except Exception as e:
         st.error(f"❌ Erreur lors du traitement du fichier: {str(e)}")

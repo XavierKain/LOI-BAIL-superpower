@@ -250,13 +250,14 @@ def generer_conditions_suspensives(
         return option1_text
 
     # Multiple conditions: use option2_text with letter replacement
+    # Letters a./b./c./d. are wrapped in <b> tags so they render as bold
     lettres = ["a", "b", "c", "d"]
     conditions_text = []
     for idx, (key, value) in enumerate(conditions):
         if idx < len(lettres):
             lettre = lettres[idx]
             texte = _TEXTES_CONDITIONS.get(value, f"[Condition: {value}]")
-            conditions_text.append(f"{lettre}. {texte}")
+            conditions_text.append(f"<b>{lettre}.</b> {texte}")
 
     replacement_lines = "\n\n".join(conditions_text)
     replacement = f"suivantes :\n\n{replacement_lines}\n\nCi-après"
@@ -466,32 +467,48 @@ class BailGenerator:
                         textes.append(texte)
 
             if not is_cond_suspensive:
-                for row in rows:
-                    donnee_source = row.get("Donnée source")
-                    nom_source_raw = row.get("Nom Source")
-                    nom_source = str(nom_source_raw).strip() if pd.notna(nom_source_raw) else ""
-                    condition = row.get("Condition")
-                    option1 = row.get("Entrée correspondante - Option 1", "")
-                    condition2 = row.get("Condition Option 2")
-                    option2 = row.get("Entrée correspondante - Option 2", "")
+                # Separate rows into "specific" (have donnee_source) and "fallback"
+                # (no donnee_source). Fallback rows are only used if no specific
+                # row matched. This handles cases like Comparution Preneur row 12
+                # (Personne Physique default) which would otherwise always fire.
+                specific_rows = [r for r in rows if pd.notna(r.get("Donnée source"))]
+                fallback_rows = [r for r in rows if not pd.notna(r.get("Donnée source"))]
+                # If all rows are specific OR all are fallback, process as one group
+                if not specific_rows or not fallback_rows:
+                    rows_to_process = [(rows, False)]
+                else:
+                    rows_to_process = [(specific_rows, False), (fallback_rows, True)]
 
-                    # Step 1: Check Donnee source / Nom Source lookup (if both present)
-                    if pd.notna(donnee_source) and nom_source:
-                        if not self._check_donnee_source_match(
-                            nom_source, donnee_source, article_name, variables
-                        ):
-                            continue
+                for row_group, is_fallback_group in rows_to_process:
+                    if is_fallback_group and textes:
+                        # A specific row already matched → skip fallback group
+                        break
+                    for row in row_group:
+                        donnee_source = row.get("Donnée source")
+                        nom_source_raw = row.get("Nom Source")
+                        nom_source = str(nom_source_raw).strip() if pd.notna(nom_source_raw) else ""
+                        condition = row.get("Condition")
+                        option1 = row.get("Entrée correspondante - Option 1", "")
+                        condition2 = row.get("Condition Option 2")
+                        option2 = row.get("Entrée correspondante - Option 2", "")
 
-                    # Step 2: Evaluate Condition -> Option 1
-                    if evaluer_condition(condition, variables):
-                        if pd.notna(option1) and str(option1).strip():
-                            textes.append(str(option1))
-                            continue
+                        # Step 1: Check Donnee source / Nom Source lookup (if both present)
+                        if pd.notna(donnee_source) and nom_source:
+                            if not self._check_donnee_source_match(
+                                nom_source, donnee_source, article_name, variables
+                            ):
+                                continue
 
-                    # Step 3: Evaluate Condition Option 2 -> Option 2
-                    if evaluer_condition(condition2, variables):
-                        if pd.notna(option2) and str(option2).strip():
-                            textes.append(str(option2))
+                        # Step 2: Evaluate Condition -> Option 1
+                        if evaluer_condition(condition, variables):
+                            if pd.notna(option1) and str(option1).strip():
+                                textes.append(str(option1))
+                                continue
+
+                        # Step 3: Evaluate Condition Option 2 -> Option 2
+                        if evaluer_condition(condition2, variables):
+                            if pd.notna(option2) and str(option2).strip():
+                                textes.append(str(option2))
 
             contenu = "\n\n".join(textes)
 
