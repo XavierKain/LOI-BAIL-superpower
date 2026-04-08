@@ -309,12 +309,11 @@ Cette application génère automatiquement des documents LOI (Lettres d'Intentio
                         # Ensure source file is on disk
                         source_path_bail = _ensure_source_file(file_content, uploaded_file.name)
 
-                        # Use source file's Rédaction BAIL sheet if available
-                        import openpyxl as _opx
-                        _wb_check = _opx.load_workbook(source_path_bail, read_only=True)
-                        _has_bail = any("bail" in s.lower() and ("redaction" in s.lower().replace("é","e")) for s in _wb_check.sheetnames)
-                        _wb_check.close()
-                        bail_config = source_path_bail if _has_bail else str(CONFIG_BAIL)
+                        # Always use config/redaction_bail.xlsx for BAIL rules:
+                        # the config file contains the maintained bold/underline
+                        # formatting tags (<b>, <u>) and heading markers (**/***).
+                        # The source file is still used for data lookups (Hypothèses).
+                        bail_config = str(CONFIG_BAIL)
 
                         bail_gen = BailGenerator(
                             bail_config, source_workbook_path=source_path_bail
